@@ -114,7 +114,28 @@ def render_new_trade():
         exit_price = c2.number_input("Exit Price", 6.0)
         submitted = st.form_submit_button("Save Trade")
         if submitted:
-            st.info("Would run quant engine on this entry and save. (To be implemented in route/controller)")
+            import uuid
+            session = get_session()
+            try:
+                new_trade = Trade(
+                    trade_uuid=str(uuid.uuid4()),
+                    ticker=ticker,
+                    option_type=option_type,
+                    strike=strike,
+                    entry_price=entry_price,
+                    exit_price=exit_price,
+                    entry_time=pd.to_datetime('today').tz_localize('UTC') if isinstance(pd.to_datetime('today'), pd.Timestamp) else pd.to_datetime(datetime.utcnow(), utc=True),
+                    exit_time=pd.to_datetime('today').tz_localize('UTC') if isinstance(pd.to_datetime('today'), pd.Timestamp) else pd.to_datetime(datetime.utcnow(), utc=True),
+                    contracts=1,
+                    pnl=(exit_price - entry_price) * 100 * (1 if option_type == 'call' else 1) # Simple representation
+                )
+                session.add(new_trade)
+                session.commit()
+                st.success(f"Trade for {ticker} successfully saved: ${new_trade.pnl:.2f} PnL!")
+            except Exception as e:
+                st.error(f"Error saving trade: {e}")
+            finally:
+                session.close()
 
 def render_trade_viewer():
     st.header("Trade Viewer & Replay")

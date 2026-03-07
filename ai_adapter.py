@@ -2,7 +2,7 @@ import json
 import hashlib
 import time
 from typing import Dict, Any, Optional
-import google.generativeai as genai
+from google import genai
 from groq import Groq
 from db import get_session, AICache
 from secrets_store import get_api_key
@@ -12,7 +12,7 @@ class AIAdapter:
         self.provider = provider.lower()
         if self.provider == "gemini":
             key = get_api_key("gemini_api_key")
-            genai.configure(api_key=key)
+            self.gemini_client = genai.Client(api_key=key)
         elif self.provider == "groq":
             key = get_api_key("groq_api_key")
             self.groq_client = Groq(api_key=key)
@@ -51,8 +51,10 @@ class AIAdapter:
         if self.provider == "noop":
             response_text = '{"summary": "No-op offline test.", "trade_quality_checklist": 100}'
         elif self.provider == "gemini":
-            m = genai.GenerativeModel(model)
-            resp = m.generate_content(final_prompt)
+            resp = self.gemini_client.models.generate_content(
+                model=model,
+                contents=final_prompt
+            )
             response_text = resp.text
         elif self.provider == "groq":
             chat_completion = self.groq_client.chat.completions.create(
