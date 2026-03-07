@@ -136,3 +136,202 @@ def import_trades_csv(file_path_or_buffer) -> pd.DataFrame:
         raise ValueError(f"Failed to parse CSV. Please check the file format. Underlying error: {e}") from e
     # Expected user mapping done in UI. Here we return raw for UI to present.
     return df
+
+
+def filter_option_trades(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Keep only option trades (rows where Description or Instrument contains 'call' or 'put').
+    Returns filtered DataFrame, or original if no option rows found.
+    """
+    if df.empty:
+        return df
+    col_map = {c.lower(): c for c in df.columns}
+    desc_col = col_map.get("description") or col_map.get("instrument")
+    if not desc_col:
+        text_cols = [c for c in df.columns if df[c].dtype == "object"]
+        desc_col = text_cols[0] if text_cols else df.columns[0]
+    desc_series = df[desc_col].astype(str)
+    mask = desc_series.str.contains("call", case=False, na=False) | desc_series.str.contains("put", case=False, na=False)
+    opt_df = df[mask].copy()
+    return opt_df if not opt_df.empty else df
+
+
+import re
+from typing import List, Dict, Any, Optional
+
+
+def _parse_option_description(desc: str, instrument: str) -> Optional[Dict[str, Any]]:
+    """
+    Parse Robinhood-style option description into ticker, expiry, option_type, strike.
+    Handles: "CRCL 6/27/2025 Put $202.50", "SPY 05/15/2024 515.00 Call", "Option Expiration for SPY 2/4/"
+    """
+    if not desc or pd.isna(desc):
+        return None
+    desc = str(desc).strip()
+    # Try: INSTRUMENT M/D/YYYY Put $STRIKE or INSTRUMENT M/D/YYYY Call $STRIKE
+    m = re.search(r"(\w+)\s+(\d{1,2}/\d{1,2}/\d{2,4})\s+(Put|Call)\s+\$?([\d.]+)", desc, re.I)
+    if m:
+        return {"ticker": m.group(1), "expiry_str": m.group(2), "option_type": m.group(3).lower(), "strike": float(m.group(4))}
+    # Try: INSTRUMENT MM/DD/YYYY STRIKE Call/Put (strike before type)
+    m = re.search(r"(\w+)\s+(\d{1,2}/\d{1,2}/\d{2,4})\s+([\d.]+)\s+(Call|Put)", desc, re.I)
+    if m:
+        return {"ticker": m.group(1), "expiry_str": m.group(2), "option_type": m.group(4).lower(), "strike": float(m.group(3))}
+    # Fallback: use Instrument as ticker if we can at least get type and strike
+    m = re.search(r"(Put|Call)\s+\$?([\d.]+)", desc, re.I)
+    if m:
+        return {"ticker": str(instrument).strip() if instrument else "UNK", "expiry_str": "", "option_type": m.group(1).lower(), "strike": float(m.group(2))}
+    return None
+
+
+def _parse_quantity(qty) -> int:
+    """Extract contract count from Quantity (e.g. '1', '1S', '2')."""
+    if qty is None or pd.isna(qty):
+        return 1
+    s = str(qty).strip()
+    digits = "".join(c for c in s if c.isdigit())
+    return max(1, int(digits)) if digits else 1
+
+
+def _parse_price(price) -> float:
+    """Parse price; OEXP/None -> 0."""
+    if price is None or pd.isna(price) or str(price).strip().lower() in ("none", ""):
+        return 0.0
+    try:
+        return float(price)
+    except (ValueError, TypeError):
+        return 0.0
+
+
+def _parse_date(date_val) -> Optional[datetime]:
+    """Parse Activity Date to datetime."""
+    if date_val is None or pd.isna(date_val):
+        return None
+    try:
+        dt = pd.to_datetime(date_val)
+        return dt.to_pydatetime() if hasattr(dt, "to_pydatetime") else datetime.combine(dt.date(), datetime.min.time())
+    except Exception:
+        return None
+
+
+def parse_robinhood_to_trades(opt_df: pd.DataFrame) -> List[Dict[str, Any]]:
+    """
+    Pair BTO (Buy To Open) + STC (Sell To Close) / OEXP rows into complete trades.
+    Returns a list of dicts ready for Trade model: ticker, option_type, strike, expiry, contracts,
+    entry_price, exit_price, entry_time, exit_time, pnl.
+    """
+    if opt_df.empty:
+        return []
+
+    col_map = {c.lower().replace(" ", "_"): c for c in opt_df.columns}
+    activity_col = col_map.get("activity_date") or col_map.get("process_date") or (opt_df.columns[0] if len(opt_df.columns) > 0 else None)
+    if not activity_col:
+        return []
+    instrument_col = col_map.get("instrument") or "Instrument"
+    desc_col = col_map.get("description") or "Description"
+    trans_col = col_map.get("trans_code") or "Trans Code"
+    qty_col = col_map.get("quantity") or "Quantity"
+    price_col = col_map.get("price") or "Price"
+    amount_col = col_map.get("amount") or "Amount"
+
+    # Normalize column names for access
+    def _get(row, key, default=None):
+        for k, v in col_map.items():
+            if k.replace("_", "") == key.replace("_", ""):
+                return row.get(v, default)
+        return row.get(key, default) if key in opt_df.columns else default
+
+    # Build rows as list of dicts
+    rows = []
+    # Normalize Robinhood "Buy"/"Sell" to BTO/STC
+    trans_map = {"BUY": "BTO", "SELL": "STC"}
+    for _, r in opt_df.iterrows():
+        row = r.to_dict()
+        trans = str(row.get(trans_col, "") or "").strip().upper()
+        trans = trans_map.get(trans, trans)
+        if trans not in ("BTO", "STC", "OEXP"):
+            continue
+        instrument = row.get(instrument_col, "")
+        parsed = _parse_option_description(str(row.get(desc_col, "")), instrument)
+        if not parsed:
+            continue
+        date_val = row.get(activity_col)
+        dt = _parse_date(date_val)
+        qty = _parse_quantity(row.get(qty_col))
+        price = _parse_price(row.get(price_col))
+        amount = float(row.get(amount_col, 0) or 0)
+
+        rows.append({
+            "trans": trans,
+            "ticker": parsed["ticker"],
+            "option_type": parsed["option_type"],
+            "strike": parsed["strike"],
+            "expiry_str": parsed.get("expiry_str", ""),
+            "date": dt,
+            "contracts": qty,
+            "price": price,
+            "amount": amount,
+            "description": str(row.get(desc_col, "")),
+        })
+
+    # Group by (ticker, option_type, strike, expiry_str) and pair BTO with STC/OEXP
+    from collections import defaultdict
+    groups = defaultdict(list)
+    for r in rows:
+        key = (r["ticker"], r["option_type"], r["strike"], r["expiry_str"])
+        groups[key].append(r)
+
+    trades = []
+    for key, group in groups.items():
+        btos = [x for x in group if x["trans"] == "BTO"]
+        exits = [x for x in group if x["trans"] in ("STC", "OEXP")]
+        if not btos or not exits:
+            continue
+        # Match by quantity; take first of each for simplicity
+        bto = btos[0]
+        ex = exits[0]
+        contracts = min(bto["contracts"], ex["contracts"])
+        entry_price = bto["price"]
+        exit_price = ex["price"]
+        entry_dt = bto["date"]
+        exit_dt = ex["date"]
+        if not entry_dt:
+            entry_dt = datetime.now()
+        if not exit_dt:
+            exit_dt = entry_dt
+
+        # Add market-hour times and convert to UTC for DB
+        et = pytz.timezone("America/New_York")
+        entry_dt = et.localize(datetime.combine(entry_dt.date() if hasattr(entry_dt, "date") else entry_dt, datetime.strptime("09:35", "%H:%M").time()))
+        exit_dt = et.localize(datetime.combine(exit_dt.date() if hasattr(exit_dt, "date") else exit_dt, datetime.strptime("15:55", "%H:%M").time()))
+        entry_dt = entry_dt.astimezone(pytz.UTC)
+        exit_dt = exit_dt.astimezone(pytz.UTC)
+
+        pnl = (exit_price - entry_price) * 100 * contracts
+
+        # Parse expiry date for Trade.expiry
+        expiry_date = None
+        if bto.get("expiry_str"):
+            try:
+                expiry_date = pd.to_datetime(bto["expiry_str"]).date()
+            except Exception:
+                pass
+        if not expiry_date and entry_dt:
+            expiry_date = entry_dt.date() if hasattr(entry_dt, "date") else None
+
+        ticker = bto["ticker"]
+        if ticker.upper() == "SPX":
+            ticker = "^SPX"
+
+        trades.append({
+            "ticker": ticker,
+            "option_type": bto["option_type"],
+            "strike": bto["strike"],
+            "expiry": expiry_date,
+            "contracts": contracts,
+            "entry_price": entry_price,
+            "exit_price": exit_price,
+            "entry_time": entry_dt,
+            "exit_time": exit_dt,
+            "pnl": pnl,
+        })
+    return trades

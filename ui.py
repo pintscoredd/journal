@@ -10,7 +10,7 @@ from datetime import datetime, timedelta
 
 from db import get_session, Trade, Secret
 from secrets_store import store_api_key, get_master_key, encrypt_key
-from ingest import get_market_data, import_trades_csv
+from ingest import get_market_data, import_trades_csv, parse_robinhood_to_trades, filter_option_trades
 from ai_adapter import AIAdapter
 from montecarlo import simulate_equity_paths, calculate_risk_metrics
 from enrichment import enrich_trade
@@ -60,27 +60,8 @@ def get_all_trades_df():
 
 # --- HELPERS ---
 def _filter_option_trades(df: pd.DataFrame) -> pd.DataFrame:
-    """
-    Best-effort filter to keep only option trades from a broker CSV.
-    Detects options via Description / Instrument text containing 'call' or 'put'.
-    Falls back to the full DataFrame if no clear option rows are found.
-    """
-    if df.empty:
-        return df
-
-    # Prefer Description, otherwise Instrument, otherwise first string-like column
-    col_map = {c.lower(): c for c in df.columns}
-    desc_col = col_map.get("description") or col_map.get("instrument")
-    if not desc_col:
-        # Try to guess a text column
-        text_cols = [c for c in df.columns if df[c].dtype == "object"]
-        desc_col = text_cols[0] if text_cols else df.columns[0]
-
-    desc_series = df[desc_col].astype(str)
-    mask = desc_series.str.contains("call", case=False, na=False) | desc_series.str.contains("put", case=False, na=False)
-    opt_df = df[mask].copy()
-    # If nothing matched, just return the original so the user still sees something
-    return opt_df if not opt_df.empty else df
+    """Thin wrapper over ingest.filter_option_trades for backward compatibility."""
+    return filter_option_trades(df)
 
 # --- PAGES ---
 def render_dashboard():
@@ -158,43 +139,97 @@ def render_new_trade():
             else:
                 st.subheader("Detected option trades from CSV")
 
-            # Choose a compact, option-focused column set if available
-            preferred_cols = [
-                "Activity Date",
-                "Process Date",
-                "Instrument",
-                "Description",
-                "Trans Code",
-                "Quantity",
-                "Price",
-                "Amount",
-            ]
-            present_cols = [c for c in preferred_cols if c in opt_df.columns]
-            view_df = opt_df[present_cols].copy() if present_cols else opt_df.copy()
+            # Parse into paired trades (BTO + STC)
+            paired_trades = parse_robinhood_to_trades(opt_df)
 
-            # Add an approve/deny toggle the user can edit
-            if "approve" not in view_df.columns:
-                view_df.insert(0, "approve", True)
+            if not paired_trades:
+                st.warning("No complete option trades (BTO + STC pairs) found. Unpaired rows are skipped.")
+                # Fallback: show raw table for reference
+                with st.expander("View raw option rows"):
+                    st.dataframe(opt_df, use_container_width=True)
+            else:
+                st.caption("Review each trade and toggle **Include** to approve or deny before importing.")
 
-            st.caption("Toggle 'approve' to include/exclude individual option trades before importing.")
-            edited_df = st.data_editor(
-                view_df,
-                use_container_width=True,
-                num_rows="dynamic",
-                key="csv_option_editor",
-            )
+                # Card-based layout: 2 cards per row
+                cols_per_row = 2
+                for i in range(0, len(paired_trades), cols_per_row):
+                    row_cols = st.columns(cols_per_row)
+                    for j, col in enumerate(row_cols):
+                        idx = i + j
+                        if idx >= len(paired_trades):
+                            break
+                        t = paired_trades[idx]
+                        with col:
+                            pnl = t.get("pnl", 0)
+                            pnl_color = "#26a69a" if pnl >= 0 else "#ef5350"
+                            st.markdown(
+                                f"""
+                                <div style="
+                                    background: linear-gradient(135deg, #1e1e2e 0%, #262730 100%);
+                                    border-radius: 12px;
+                                    padding: 1rem 1.2rem;
+                                    margin-bottom: 1rem;
+                                    border-left: 4px solid {pnl_color};
+                                    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+                                ">
+                                    <div style="font-weight: 600; font-size: 1.1rem; margin-bottom: 0.3rem;">
+                                        {t.get('ticker', '')} {t.get('option_type', '').capitalize()} ${t.get('strike', 0):.2f}
+                                    </div>
+                                    <div style="color: #888; font-size: 0.85rem; margin-bottom: 0.5rem;">
+                                        {str(t.get('expiry', '')) if t.get('expiry') else '—'} · {t.get('contracts', 1)} contract(s)
+                                    </div>
+                                    <div style="font-size: 0.9rem;">
+                                        ${t.get('entry_price', 0):.2f} → ${t.get('exit_price', 0):.2f}
+                                        <span style="color: {pnl_color}; font-weight: 600; margin-left: 0.5rem;">
+                                            {f'+${pnl:.0f}' if pnl >= 0 else f'-${abs(pnl):.0f}'}
+                                        </span>
+                                    </div>
+                                </div>
+                                """,
+                                unsafe_allow_html=True,
+                            )
+                            include = st.checkbox("Include", value=True, key=f"csv_approve_{idx}")
 
-            approved = edited_df[edited_df.get("approve", True) == True]  # noqa: E712
-            denied = len(edited_df) - len(approved)
+                approved_count = sum(1 for i in range(len(paired_trades)) if st.session_state.get(f"csv_approve_{i}", True))
+                denied_count = len(paired_trades) - approved_count
+                st.write(f"**{approved_count}** approved · **{denied_count}** denied")
 
-            st.write(f"Approved trades: **{len(approved)}**, Denied trades: **{denied}**")
-
-            if st.button("Import approved trades (coming soon)"):
-                # Placeholder for future mapping into Trade rows.
-                st.success(
-                    f"Approve/Deny selections captured. "
-                    f"{len(approved)} trades would be imported; {denied} would be skipped."
-                )
+                if st.button("Import approved trades"):
+                    import uuid
+                    session = get_session()
+                    saved = 0
+                    try:
+                        for i, t in enumerate(paired_trades):
+                            if not st.session_state.get(f"csv_approve_{i}", True):
+                                continue
+                            expiry = t.get("expiry")
+                            if hasattr(expiry, "date"):
+                                expiry = expiry.date() if expiry else None
+                            elif expiry is not None and not hasattr(expiry, "year"):
+                                expiry = pd.to_datetime(expiry).date() if pd.notna(expiry) else None
+                            new_trade = Trade(
+                                trade_uuid=str(uuid.uuid4()),
+                                ticker=str(t.get("ticker", "")),
+                                option_type=str(t.get("option_type", "call")),
+                                strike=float(t.get("strike", 0)),
+                                expiry=expiry,
+                                contracts=int(t.get("contracts", 1)),
+                                entry_price=float(t.get("entry_price", 0)),
+                                exit_price=float(t.get("exit_price", 0)),
+                                entry_time=t.get("entry_time"),
+                                exit_time=t.get("exit_time"),
+                                pnl=float(t.get("pnl", 0)),
+                            )
+                            session.add(new_trade)
+                            saved += 1
+                        session.commit()
+                        st.success(f"Imported **{saved}** trades into your journal.")
+                        st.rerun()
+                    except Exception as e:
+                        session.rollback()
+                        st.error(f"Import failed: {e}")
+                    finally:
+                        session.close()
     
     st.subheader("Manual Quick Entry")
     with st.form("manual_entry"):
