@@ -188,12 +188,20 @@ def _parse_option_description(desc: str, instrument: str) -> Optional[Dict[str, 
 
 
 def _parse_quantity(qty) -> int:
-    """Extract contract count from Quantity (e.g. '1', '1S', '2')."""
+    """Extract contract count from Quantity (e.g. '1', '1.0', '1S', '2')."""
     if qty is None or pd.isna(qty):
         return 1
-    s = str(qty).strip()
-    digits = "".join(c for c in s if c.isdigit())
-    return max(1, int(digits)) if digits else 1
+    try:
+        return max(1, int(float(qty)))
+    except (ValueError, TypeError):
+        s = str(qty).strip()
+        m = re.search(r'([\d.]+)', s)
+        if m:
+            try:
+                return max(1, int(float(m.group(1))))
+            except ValueError:
+                pass
+        return 1
 
 
 def _parse_price(price) -> float:
