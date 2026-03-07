@@ -296,9 +296,22 @@ def render_trade_viewer():
     if 'edit_mode' not in st.session_state:
         st.session_state.edit_mode = False
         
+    def format_trade(x):
+        row = df[df['id'] == x].iloc[0]
+        ticker = row.get('ticker', '')
+        op_type = str(row.get('option_type', '')).capitalize()
+        strike = row.get('strike', '')
+        try:
+            etime = pd.to_datetime(row['entry_time']).strftime('%b %d, %Y %I:%M %p')
+        except:
+            etime = row['entry_time']
+        pnl = row.get('pnl', 0)
+        pnl_str = f"+${pnl:.0f}" if pnl >= 0 else f"-${abs(pnl):.0f}"
+        return f"Trade {x} | {ticker} ${strike} {op_type} | {etime} | {pnl_str}"
+
     col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
-        trade_id = st.selectbox("Select Trade", df['id'].values, format_func=lambda x: f"Trade {x} | {df[df['id']==x]['entry_time'].values[0]}")
+        trade_id = st.selectbox("Select Trade", df['id'].values, format_func=format_trade)
     with col2:
         st.write("") # push down to align
         st.write("")
