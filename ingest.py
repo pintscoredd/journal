@@ -124,7 +124,15 @@ def compute_realized_vol(df: pd.DataFrame, end_time: datetime, window_mins: int,
     return float(std_dev * ann_factor)
 
 def import_trades_csv(file_path_or_buffer) -> pd.DataFrame:
-    # A generic parser that takes Robinhood-like CSV and maps to our model
-    df = pd.read_csv(file_path_or_buffer)
+    """
+    Generic CSV parser for broker exports (e.g. Robinhood).
+    More forgiving on bad lines so uploads don't crash the app.
+    """
+    try:
+        # engine='python' + on_bad_lines='skip' is robust to stray commas / malformed rows
+        df = pd.read_csv(file_path_or_buffer, engine="python", on_bad_lines="skip")
+    except Exception as e:
+        # Surface a clear error to the UI instead of a low-level parser error
+        raise ValueError(f"Failed to parse CSV. Please check the file format. Underlying error: {e}") from e
     # Expected user mapping done in UI. Here we return raw for UI to present.
     return df
