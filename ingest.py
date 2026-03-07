@@ -10,11 +10,14 @@ CACHE_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data_cache
 os.makedirs(CACHE_DIR, exist_ok=True)
 CACHE_TTL_SECONDS = 3600  # 1 hour
 
-def fetch_yfinance_with_retry(ticker: str, interval: str, period: str = "7d", retries: int = 3) -> pd.DataFrame:
+def fetch_yfinance_with_retry(ticker: str, interval: str, period: str = "7d", start=None, end=None, retries: int = 3) -> pd.DataFrame:
     for attempt in range(retries):
         try:
             t = yf.Ticker(ticker)
-            df = t.history(interval=interval, period=period)
+            if start and end:
+                df = t.history(interval=interval, start=start, end=end)
+            else:
+                df = t.history(interval=interval, period=period)
             if not df.empty:
                 # Ensure timezone aware index (UTC)
                 if df.index.tz is None:
@@ -26,12 +29,13 @@ def fetch_yfinance_with_retry(ticker: str, interval: str, period: str = "7d", re
             time.sleep(1 + attempt * 2)
     return pd.DataFrame()
 
-def get_market_data(ticker: str, interval: str = "1m") -> pd.DataFrame:
+def get_market_data(ticker: str, interval: str = "1m", start=None, end=None) -> pd.DataFrame:
     # Use SPX index standard representation for yfinance if ^SPX is passed
     yf_ticker = ticker
     
     safe_ticker = yf_ticker.replace("^", "")
-    cache_file = os.path.join(CACHE_DIR, f"{safe_ticker}_{interval}.parquet")
+    suffix = f"_{start}_{end}" if start and end else ""
+    cache_file = os.path.join(CACHE_DIR, f"{safe_ticker}_{interval}{suffix}.parquet")
     
     # Check cache TTL
     if os.path.exists(cache_file):
@@ -50,7 +54,7 @@ def get_market_data(ticker: str, interval: str = "1m") -> pd.DataFrame:
     # Fetch fresh
     # Period for 1m bars in yfinance is max 7d
     period = "7d" if interval == "1m" else "60d"
-    df = fetch_yfinance_with_retry(yf_ticker, interval, period)
+    df = fetch_yfinance_with_retry(yf_ticker, interval, period, start, end)
     
     if not df.empty:
         try:

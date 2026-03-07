@@ -17,8 +17,8 @@ from enrichment import enrich_trade
 
 # --- CACHING ---
 @st.cache_data(ttl=3600)
-def fetch_cached_market_data(ticker, interval):
-    return get_market_data(ticker, interval)
+def fetch_cached_market_data(ticker, interval, start=None, end=None):
+    return get_market_data(ticker, interval, start, end)
 
 @st.cache_data
 def run_cached_monte_carlo(trades_df, num_sims, initial, block_size):
@@ -311,7 +311,8 @@ def render_trade_viewer():
 
     col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
-        trade_id = st.selectbox("Select Trade", df['id'].values, format_func=format_trade)
+        trade_ids = df.sort_values('entry_time', ascending=False)['id'].values
+        trade_id = st.selectbox("Select Trade", trade_ids, format_func=format_trade)
     with col2:
         st.write("") # push down to align
         st.write("")
@@ -410,18 +411,33 @@ def render_trade_viewer():
     # Replay Chart
     st.subheader("Replay Chart")
     try:
-        md = fetch_cached_market_data(selected['ticker'], "1m")
+        # Parse db time safely first so we can determine age
+        db_entry = pd.to_datetime(selected['entry_time'])
+        db_exit = pd.to_datetime(selected['exit_time'])
+        if db_entry.tzinfo is None:
+            db_entry = db_entry.tz_localize('UTC')
+        if db_exit.tzinfo is None:
+            db_exit = db_exit.tz_localize('UTC')
+            
+        now = pd.Timestamp.utcnow()
+        days_ago = (now - db_entry).days
+        
+        interval = "1m"
+        if days_ago > 720:
+            interval = "1d"
+        elif days_ago > 50:
+            interval = "1h"
+        elif days_ago > 5:
+            interval = "5m"
+            
+        start_date_str = (db_entry - timedelta(days=2)).strftime('%Y-%m-%d')
+        end_date_str = (db_exit + timedelta(days=2)).strftime('%Y-%m-%d')
+        
+        md = fetch_cached_market_data(selected['ticker'], interval, start=start_date_str, end=end_date_str)
         if not md.empty:
-            # Parse db time safely
-            db_entry = pd.to_datetime(selected['entry_time'])
-            db_exit = pd.to_datetime(selected['exit_time'])
-            if db_entry.tzinfo is None:
-                db_entry = db_entry.tz_localize('UTC')
-            if db_exit.tzinfo is None:
-                db_exit = db_exit.tz_localize('UTC')
-                
-            start_date = db_entry - timedelta(hours=1)
-            end_date = db_exit + timedelta(hours=1)
+            # Revert to filtering exactly for the chart domain
+            start_date = db_entry - timedelta(hours=2) if interval in ("1h", "1d") else db_entry - timedelta(hours=1)
+            end_date = db_exit + timedelta(hours=2) if interval in ("1h", "1d") else db_exit + timedelta(hours=1)
             mask = (md.index >= start_date) & (md.index <= end_date)
             plot_md = md.loc[mask].copy()
             plot_md = plot_md.sort_index()
