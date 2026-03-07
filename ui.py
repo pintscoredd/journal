@@ -65,8 +65,14 @@ def render_dashboard():
     c3.metric("Avg Win", f"${avg_win:.2f}")
     c4.metric("Avg Loss", f"${avg_loss:.2f}")
 
+    df = df.sort_values('entry_time')
+    df['cum_pnl'] = df['pnl'].cumsum()
+    df['Trade Number'] = range(1, len(df) + 1)
+    
     # Equity Curve
-    fig = px.line(df, x='entry_time', y='cum_pnl', title='Equity Curve')
+    fig = px.line(df, x='Trade Number', y='cum_pnl', title='Equity Curve', markers=True,
+                  hover_data=['entry_time', 'ticker', 'pnl'])
+    fig.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
     st.plotly_chart(fig, use_container_width=True)
     
     # Expectancy by 15m bucket
@@ -203,6 +209,39 @@ def render_trade_viewer():
     st.write(f"**Score**: {selected.get('trade_quality_score', 'N/A')}/100")
     st.write(f"PnL: ${selected['pnl']}")
     
+    with st.expander("Edit Selected Trade"):
+        with st.form(f"edit_trade_{trade_id}"):
+            e_col1, e_col2 = st.columns(2)
+            n_tick = e_col1.text_input("Ticker", value=str(selected['ticker']))
+            n_opt = e_col2.selectbox("Option Type", ["call", "put"], index=0 if selected['option_type']=='call' else 1)
+            
+            e_col3, e_col4, e_col5 = st.columns(3)
+            n_strike = e_col3.number_input("Strike", value=float(selected['strike'] or 0))
+            n_contracts = e_col4.number_input("Contracts", value=int(selected.get('contracts') or 1), step=1)
+            
+            e_col6, e_col7 = st.columns(2)
+            n_en = e_col6.number_input("Entry Price", value=float(selected['entry_price'] or 0), step=0.1)
+            n_ex = e_col7.number_input("Exit Price", value=float(selected['exit_price'] or 0), step=0.1)
+            
+            if st.form_submit_button("Save Changes"):
+                sess = get_session()
+                try:
+                    t_upd = sess.query(Trade).filter_by(id=trade_id).first()
+                    if t_upd:
+                        t_upd.ticker = n_tick
+                        t_upd.option_type = n_opt
+                        t_upd.strike = n_strike
+                        t_upd.contracts = n_contracts
+                        t_upd.entry_price = n_en
+                        t_upd.exit_price = n_ex
+                        t_upd.pnl = (n_ex - n_en) * 100 * n_contracts
+                        sess.commit()
+                        st.rerun()
+                except Exception as e:
+                    st.error(f"Update failed: {e}")
+                finally:
+                    sess.close()
+    
     # Replay Chart
     st.subheader("Replay Chart")
     try:
@@ -332,19 +371,19 @@ def render_trade_viewer():
             
             # Serialize only numeric quant aspects to pass
             quant_dict = {
-                "ticker": selected.get("ticker", "UNKNOWN"),
-                "option_type": selected.get("option_type", "UNKNOWN"),
-                "strike": selected.get("strike", 0),
-                "entry_price": selected.get("entry_price", 0),
-                "exit_price": selected.get("exit_price", 0),
-                "contracts": selected.get("contracts", 1),
-                "pnl": selected.get("pnl", 0),
-                "delta": selected.get("delta_entry") or 0.45,
-                "gamma_exposure": selected.get("gamma_entry") or 0.08,
-                "vol_ratio": selected.get("vol_ratio") or 1.15,
-                "execution_score": selected.get("entry_execution_score") or 85,
-                "trade_quality_score": selected.get("trade_quality_score") or 90,
-                "hold_minutes": selected.get("hold_time_minutes") or 15
+                "ticker": str(selected.get("ticker", "UNKNOWN")),
+                "option_type": str(selected.get("option_type", "UNKNOWN")),
+                "strike": float(selected.get("strike") or 0.0),
+                "entry_price": float(selected.get("entry_price") or 0.0),
+                "exit_price": float(selected.get("exit_price") or 0.0),
+                "contracts": int(selected.get("contracts") or 1),
+                "pnl": float(selected.get("pnl") or 0.0),
+                "delta": float(selected.get("delta_entry") or 0.45),
+                "gamma_exposure": float(selected.get("gamma_entry") or 0.08),
+                "vol_ratio": float(selected.get("vol_ratio") or 1.15),
+                "execution_score": float(selected.get("entry_execution_score") or 85.0),
+                "trade_quality_score": float(selected.get("trade_quality_score") or 90.0),
+                "hold_minutes": float(selected.get("hold_time_minutes") or 15.0)
             }
             res = adapter.get_critique(template, quant_dict, model="")
             st.markdown(res)
