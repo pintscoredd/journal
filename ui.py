@@ -188,6 +188,16 @@ def render_new_trade():
                                 """,
                                 unsafe_allow_html=True,
                             )
+                            # Time inputs with defaults from parser
+                            en_str_def = pd.to_datetime(t.get('entry_time')).tz_convert('America/Los_Angeles').strftime('%H:%M:%S')
+                            ex_str_def = pd.to_datetime(t.get('exit_time')).tz_convert('America/Los_Angeles').strftime('%H:%M:%S')
+                            
+                            tc1, tc2 = st.columns(2)
+                            with tc1:
+                                st.text_input("Entry Time (PST)", value=en_str_def, key=f"csv_en_{idx}")
+                            with tc2:
+                                st.text_input("Exit Time (PST)", value=ex_str_def, key=f"csv_ex_{idx}")
+                                
                             include = st.checkbox("Include", value=True, key=f"csv_approve_{idx}")
 
                 approved_count = sum(1 for i in range(len(paired_trades)) if st.session_state.get(f"csv_approve_{i}", True))
@@ -207,6 +217,25 @@ def render_new_trade():
                                 expiry = expiry.date() if expiry else None
                             elif expiry is not None and not hasattr(expiry, "year"):
                                 expiry = pd.to_datetime(expiry).date() if pd.notna(expiry) else None
+                                
+                            # Retrieve edited time inputs from state
+                            en_str = st.session_state.get(f"csv_en_{i}", pd.to_datetime(t.get('entry_time')).tz_convert('America/Los_Angeles').strftime('%H:%M:%S'))
+                            ex_str = st.session_state.get(f"csv_ex_{i}", pd.to_datetime(t.get('exit_time')).tz_convert('America/Los_Angeles').strftime('%H:%M:%S'))
+                            
+                            # Parse custom time
+                            p_en = parse_time(en_str)
+                            p_ex = parse_time(ex_str)
+                            
+                            # Combine with date and convert to UTC
+                            orig_en_date = pd.to_datetime(t.get("entry_time")).tz_convert('America/Los_Angeles').date()
+                            orig_ex_date = pd.to_datetime(t.get("exit_time")).tz_convert('America/Los_Angeles').date()
+                            
+                            dt_en = datetime.combine(orig_en_date, p_en)
+                            dt_ex = datetime.combine(orig_ex_date, p_ex)
+                            
+                            utc_en = pd.to_datetime(dt_en).tz_localize('America/Los_Angeles').tz_convert('UTC')
+                            utc_ex = pd.to_datetime(dt_ex).tz_localize('America/Los_Angeles').tz_convert('UTC')
+
                             new_trade = Trade(
                                 trade_uuid=str(uuid.uuid4()),
                                 ticker=str(t.get("ticker", "")),
@@ -216,8 +245,8 @@ def render_new_trade():
                                 contracts=int(t.get("contracts", 1)),
                                 entry_price=float(t.get("entry_price", 0)),
                                 exit_price=float(t.get("exit_price", 0)),
-                                entry_time=t.get("entry_time"),
-                                exit_time=t.get("exit_time"),
+                                entry_time=utc_en,
+                                exit_time=utc_ex,
                                 pnl=float(t.get("pnl", 0)),
                             )
                             session.add(new_trade)

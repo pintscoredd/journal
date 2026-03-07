@@ -315,11 +315,61 @@ def parse_robinhood_to_trades(opt_df: pd.DataFrame) -> List[Dict[str, Any]]:
 
     trades = []
     
-    # Add market-hour times if time was not provided, and convert to UTC for DB
-    def safe_localize(dt, default_time_str):
+    def safe_localize(dt, default_time_str, target_price=None, ticker=None, strike=None, option_type=None):
         et = pytz.timezone("America/New_York")
         d = dt.date() if hasattr(dt, "date") else dt
-        t = dt.time() if hasattr(dt, "time") and dt.time() != datetime.min.time() else datetime.strptime(default_time_str, "%H:%M").time()
+        t = None
+        
+        if hasattr(dt, "time") and dt.time() != datetime.min.time():
+            t = dt.time()
+        elif target_price is not None and ticker and strike and option_type:
+            # Auto-estimate the execution time
+            try:
+                from quant import bs_price
+                from datetime import timedelta
+                
+                dt_utc = et.localize(datetime.combine(d, datetime.min.time())).astimezone(pytz.UTC)
+                now = pd.Timestamp.utcnow()
+                days_ago = (now - dt_utc).days
+                
+                interval = "1m"
+                if days_ago > 720: interval = "1d"
+                elif days_ago > 50: interval = "1h"
+                elif days_ago > 5: interval = "5m"
+                
+                start_date_str = (dt_utc - timedelta(days=1)).strftime('%Y-%m-%d')
+                end_date_str = (dt_utc + timedelta(days=2)).strftime('%Y-%m-%d')
+                
+                md = get_market_data(ticker, interval, start=start_date_str, end=end_date_str)
+                if not md.empty:
+                    market_open = et.localize(datetime.combine(d, datetime.strptime("09:30", "%H:%M").time())).astimezone(pytz.UTC)
+                    market_close = et.localize(datetime.combine(d, datetime.strptime("16:00", "%H:%M").time())).astimezone(pytz.UTC)
+                    md = md[(md.index >= market_open) & (md.index <= market_close)]
+                    
+                    if not md.empty:
+                        vix = get_vix_for_day(dt_utc)
+                        sigma = (vix / 100.0) if vix > 0 else 0.20
+                        
+                        best_time = None
+                        min_diff = float('inf')
+                        
+                        for idx, row in md.iterrows():
+                            S = row['Close']
+                            T_years = max((market_close - idx).total_seconds() / 31536000.0, 1 / 525600)
+                            theo = bs_price(S, strike, T_years, 0.05, sigma, option_type)
+                            diff = abs(theo - target_price)
+                            if diff < min_diff:
+                                min_diff = diff
+                                best_time = idx
+                                
+                        if best_time:
+                            t = best_time.astimezone(et).time()
+            except Exception:
+                pass
+                
+        if t is None:
+            t = datetime.strptime(default_time_str, "%H:%M").time()
+            
         return et.localize(datetime.combine(d, t)).astimezone(pytz.UTC)
 
     for key, group in groups.items():
@@ -343,8 +393,8 @@ def parse_robinhood_to_trades(opt_df: pd.DataFrame) -> List[Dict[str, Any]]:
             entry_dt = bto["date"] if bto["date"] else datetime.now()
             exit_dt = ex["date"] if ex["date"] else entry_dt
 
-            safe_entry_dt = safe_localize(entry_dt, "09:35")
-            safe_exit_dt = safe_localize(exit_dt, "15:55")
+            safe_entry_dt = safe_localize(entry_dt, "09:35", entry_price, bto["ticker"], bto["strike"], bto["option_type"])
+            safe_exit_dt = safe_localize(exit_dt, "15:55", exit_price, bto["ticker"], bto["strike"], bto["option_type"])
 
             pnl = (exit_price - entry_price) * 100 * contracts
 
