@@ -244,6 +244,9 @@ def parse_robinhood_to_trades(opt_df: pd.DataFrame) -> List[Dict[str, Any]]:
     qty_col = col_map.get("quantity") or "Quantity"
     price_col = col_map.get("price") or "Price"
     amount_col = col_map.get("amount") or "Amount"
+    
+    # Try finding an explicit time column for combinations
+    time_col = col_map.get("time") or col_map.get("execution_time") or col_map.get("activity_time")
 
     # Normalize column names for access
     def _get(row, key, default=None):
@@ -268,6 +271,16 @@ def parse_robinhood_to_trades(opt_df: pd.DataFrame) -> List[Dict[str, Any]]:
             continue
         date_val = row.get(activity_col)
         dt = _parse_date(date_val)
+        
+        # If there's an explicit time column, merge it into the date
+        if time_col and dt and row.get(time_col):
+            try:
+                t_str = str(row.get(time_col)).strip()
+                t_val = pd.to_datetime(t_str).time()
+                dt = datetime.combine(dt.date(), t_val)
+            except Exception:
+                pass
+                
         qty = _parse_quantity(row.get(qty_col))
         price = _parse_price(row.get(price_col))
         amount = _parse_price(row.get(amount_col))
@@ -311,12 +324,15 @@ def parse_robinhood_to_trades(opt_df: pd.DataFrame) -> List[Dict[str, Any]]:
         if not exit_dt:
             exit_dt = entry_dt
 
-        # Add market-hour times and convert to UTC for DB
-        et = pytz.timezone("America/New_York")
-        entry_dt = et.localize(datetime.combine(entry_dt.date() if hasattr(entry_dt, "date") else entry_dt, datetime.strptime("09:35", "%H:%M").time()))
-        exit_dt = et.localize(datetime.combine(exit_dt.date() if hasattr(exit_dt, "date") else exit_dt, datetime.strptime("15:55", "%H:%M").time()))
-        entry_dt = entry_dt.astimezone(pytz.UTC)
-        exit_dt = exit_dt.astimezone(pytz.UTC)
+        # Add market-hour times if time was not provided, and convert to UTC for DB
+        def safe_localize(dt, default_time_str):
+            et = pytz.timezone("America/New_York")
+            d = dt.date() if hasattr(dt, "date") else dt
+            t = dt.time() if hasattr(dt, "time") and dt.time() != datetime.min.time() else datetime.strptime(default_time_str, "%H:%M").time()
+            return et.localize(datetime.combine(d, t)).astimezone(pytz.UTC)
+            
+        entry_dt = safe_localize(entry_dt, "09:35")
+        exit_dt = safe_localize(exit_dt, "15:55")
 
         pnl = (exit_price - entry_price) * 100 * contracts
 
