@@ -121,19 +121,21 @@ def render_new_trade():
         
         def parse_time(ts: str) -> datetime.time:
             ts = ''.join(filter(str.isdigit, ts))
-            if not ts: return datetime.strptime("0700", "%H%M").time()
-            if len(ts) <= 2: ts = ts.zfill(2) + "00"
-            elif len(ts) == 3: ts = "0" + ts
-            elif len(ts) > 4: ts = ts[:4]
+            if not ts: return datetime.strptime("070000", "%H%M%S").time()
+            if len(ts) <= 2: ts = ts.zfill(2) + "0000"
+            elif len(ts) == 3: ts = "0" + ts + "00"
+            elif len(ts) == 4: ts = ts + "00"
+            elif len(ts) == 5: ts = "0" + ts
+            elif len(ts) > 6: ts = ts[:6]
             try:
-                return datetime.strptime(ts, "%H%M").time()
+                return datetime.strptime(ts, "%H%M%S").time()
             except:
-                return datetime.strptime("0700", "%H%M").time()
+                return datetime.strptime("070000", "%H%M%S").time()
 
         t1, t2, t3 = st.columns(3)
         trade_date = t1.date_input("Trade Date", value=datetime.today())
-        entry_time_input = t2.text_input("Entry Time (PST) e.g. 07:15", value="07:00")
-        exit_time_input = t3.text_input("Exit Time (PST) e.g. 07:30", value="07:15")
+        entry_time_input = t2.text_input("Entry Time (PST) e.g. 07:15:30", value="07:00:00")
+        exit_time_input = t3.text_input("Exit Time (PST) e.g. 07:30:15", value="07:15:00")
         
         submitted = st.form_submit_button("Save Trade")
         if submitted:
@@ -330,6 +332,13 @@ def render_trade_viewer():
             
             # Serialize only numeric quant aspects to pass
             quant_dict = {
+                "ticker": selected.get("ticker", "UNKNOWN"),
+                "option_type": selected.get("option_type", "UNKNOWN"),
+                "strike": selected.get("strike", 0),
+                "entry_price": selected.get("entry_price", 0),
+                "exit_price": selected.get("exit_price", 0),
+                "contracts": selected.get("contracts", 1),
+                "pnl": selected.get("pnl", 0),
                 "delta": selected.get("delta_entry") or 0.45,
                 "gamma_exposure": selected.get("gamma_entry") or 0.08,
                 "vol_ratio": selected.get("vol_ratio") or 1.15,
