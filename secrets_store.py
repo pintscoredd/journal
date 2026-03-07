@@ -70,6 +70,11 @@ def decrypt_key(encrypted_key: bytes) -> str:
 def get_api_key(provider: str) -> str:
     # 1. st.secrets
     try:
+        # Check root level first
+        if provider in st.secrets:
+            return st.secrets[provider]
+            
+        # Then categories
         if provider in st.secrets.get("ai", {}):
             return st.secrets["ai"][provider]
         if provider in st.secrets.get("market_data", {}):

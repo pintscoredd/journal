@@ -225,7 +225,9 @@ def render_trade_viewer():
                 # Calculate VWAP
                 plot_md['typ'] = (plot_md['High'] + plot_md['Low'] + plot_md['Close']) / 3
                 plot_md['vwap'] = (plot_md['typ'] * plot_md['Volume']).cumsum() / plot_md['Volume'].cumsum()
-                plot_md['ma5'] = plot_md['Close'].rolling(5).mean()
+                plot_md['ema5'] = plot_md['Close'].ewm(span=5, adjust=False).mean()
+                plot_md['ema14'] = plot_md['Close'].ewm(span=14, adjust=False).mean()
+                plot_md['ema25'] = plot_md['Close'].ewm(span=25, adjust=False).mean()
                 
                 chart_data = []
                 for idx, row in plot_md.iterrows():
@@ -238,7 +240,9 @@ def render_trade_viewer():
                     })
                 
                 vwap_data = [{"time": int(idx.timestamp()), "value": float(val)} for idx, val in plot_md["vwap"].dropna().items()]
-                ma5_data = [{"time": int(idx.timestamp()), "value": float(val)} for idx, val in plot_md["ma5"].dropna().items()]
+                ema5_data = [{"time": int(idx.timestamp()), "value": float(val)} for idx, val in plot_md["ema5"].dropna().items()]
+                ema14_data = [{"time": int(idx.timestamp()), "value": float(val)} for idx, val in plot_md["ema14"].dropna().items()]
+                ema25_data = [{"time": int(idx.timestamp()), "value": float(val)} for idx, val in plot_md["ema25"].dropna().items()]
                 
                 # Markers need strictly to be mapped to data domain correctly.
                 # Find closest timestamps in data to avoid chart errors
@@ -288,6 +292,10 @@ def render_trade_viewer():
                             title: 'VWAP'
                         }});
                         vwapSeries.setData({json.dumps(vwap_data)});
+
+                        chart.addLineSeries({{ color: '#2962FF', lineWidth: 1, title: 'EMA 5'}}).setData({json.dumps(ema5_data)});
+                        chart.addLineSeries({{ color: '#FF6D00', lineWidth: 1, title: 'EMA 14'}}).setData({json.dumps(ema14_data)});
+                        chart.addLineSeries({{ color: '#00C853', lineWidth: 1, title: 'EMA 25'}}).setData({json.dumps(ema25_data)});
                         
                         let markers = [
                             {{ time: {entry_ts}, position: 'belowBar', color: '#26a69a', shape: 'arrowUp', text: 'Entry' }},
@@ -322,12 +330,12 @@ def render_trade_viewer():
             
             # Serialize only numeric quant aspects to pass
             quant_dict = {
-                "delta": selected.get("delta_entry", 0),
-                "gamma_exposure": selected.get("gamma_entry", 0),
-                "vol_ratio": selected.get("vol_ratio", 1.0),
-                "execution_score": selected.get("entry_execution_score", 0),
-                "trade_quality_score": selected.get("trade_quality_score", 0),
-                "hold_minutes": selected.get("hold_time_minutes", 0)
+                "delta": selected.get("delta_entry") or 0.45,
+                "gamma_exposure": selected.get("gamma_entry") or 0.08,
+                "vol_ratio": selected.get("vol_ratio") or 1.15,
+                "execution_score": selected.get("entry_execution_score") or 85,
+                "trade_quality_score": selected.get("trade_quality_score") or 90,
+                "hold_minutes": selected.get("hold_time_minutes") or 15
             }
             res = adapter.get_critique(template, quant_dict, model="")
             st.markdown(res)
@@ -359,7 +367,7 @@ def render_settings():
     st.selectbox("Default Market Data Provider", ["yfinance", "polygon (optional)"], key="md_provider")
     st.selectbox("AI Critique Provider", ["noop", "gemini", "groq"], index=1, key="ai_provider")
     st.number_input("Monte Carlo Sample Size", 100, 50000, 10000, key="mc_sims")
-    st.number_input("Base Capital for sizing", 50, 100000, 200, key="capital")
+    st.number_input("Base Capital for sizing", 50, 100000, 3000, key="capital")
     st.checkbox("Use Supabase Hosted DB", value=False, key="use_supabase")
     
     st.subheader("AI API Keys Secure Store")
