@@ -252,7 +252,7 @@ def render_trade_viewer():
                 <!DOCTYPE html>
                 <html>
                 <head>
-                    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+                    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
                 </head>
                 <body style="margin: 0; background-color: #0e1117;">
                     <div id="chart"></div>
@@ -289,10 +289,13 @@ def render_trade_viewer():
                         }});
                         vwapSeries.setData({json.dumps(vwap_data)});
                         
-                        candlestickSeries.setMarkers([
+                        let markers = [
                             {{ time: {entry_ts}, position: 'belowBar', color: '#26a69a', shape: 'arrowUp', text: 'Entry' }},
                             {{ time: {exit_ts}, position: 'aboveBar', color: '#ef5350', shape: 'arrowDown', text: 'Exit' }}
-                        ]);
+                        ];
+                        // lightweight-charts requires markers to be perfectly strictly sorted
+                        markers.sort((a, b) => a.time - b.time);
+                        candlestickSeries.setMarkers(markers);
                         chart.timeScale().fitContent();
                         
                         window.addEventListener('resize', () => {{
@@ -311,7 +314,7 @@ def render_trade_viewer():
 
     # AI Critique
     if st.button("Generate AI Critique"):
-        provider = st.session_state.get('ai_provider', 'noop')
+        provider = st.session_state.get('ai_provider', 'gemini')
         adapter = AIAdapter(provider=provider)
         with open("single_trade_critique.txt", "r") as f:
             template = f.read()
@@ -332,7 +335,7 @@ def render_reports():
     st.header("Weekly Report Generation")
     
     if st.button("Generate Weekly Auto Report"):
-        provider = st.session_state.get('ai_provider', 'noop')
+        provider = st.session_state.get('ai_provider', 'gemini')
         adapter = AIAdapter(provider=provider)
         with open("weekly_report.txt", "r") as f:
             template = f.read()
@@ -348,7 +351,7 @@ def render_settings():
     
     st.subheader("Preferences")
     st.selectbox("Default Market Data Provider", ["yfinance", "polygon (optional)"], key="md_provider")
-    st.selectbox("AI Critique Provider", ["noop", "gemini", "groq"], key="ai_provider")
+    st.selectbox("AI Critique Provider", ["noop", "gemini", "groq"], index=1, key="ai_provider")
     st.number_input("Monte Carlo Sample Size", 100, 50000, 10000, key="mc_sims")
     st.number_input("Base Capital for sizing", 50, 100000, 200, key="capital")
     st.checkbox("Use Supabase Hosted DB", value=False, key="use_supabase")
