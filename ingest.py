@@ -193,11 +193,19 @@ def _parse_quantity(qty) -> int:
 
 
 def _parse_price(price) -> float:
-    """Parse price; OEXP/None -> 0."""
-    if price is None or pd.isna(price) or str(price).strip().lower() in ("none", ""):
+    """Parse price/amount; OEXP/None -> 0. Handles $, commas, and parenthesis for negatives."""
+    if price is None or pd.isna(price):
         return 0.0
+    
+    s = str(price).strip().replace('$', '').replace(',', '')
+    if s.startswith('(') and s.endswith(')'):
+        s = '-' + s[1:-1]
+        
+    if not s or s.lower() in ("none", "", "nan"):
+        return 0.0
+        
     try:
-        return float(price)
+        return float(s)
     except (ValueError, TypeError):
         return 0.0
 
@@ -258,7 +266,7 @@ def parse_robinhood_to_trades(opt_df: pd.DataFrame) -> List[Dict[str, Any]]:
         dt = _parse_date(date_val)
         qty = _parse_quantity(row.get(qty_col))
         price = _parse_price(row.get(price_col))
-        amount = float(row.get(amount_col, 0) or 0)
+        amount = _parse_price(row.get(amount_col))
 
         rows.append({
             "trans": trans,
