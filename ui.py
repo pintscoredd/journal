@@ -441,7 +441,7 @@ def render_trade_viewer():
             with open("single_trade_critique.txt", "r") as f:
                 template = f.read()
             
-            # Serialize only numeric quant aspects to pass
+            # Serialize quant + hold time and vol context for accurate AI critique
             quant_dict = {
                 "ticker": str(selected.get("ticker", "UNKNOWN")),
                 "option_type": str(selected.get("option_type", "UNKNOWN")),
@@ -450,6 +450,7 @@ def render_trade_viewer():
                 "exit_price": float(selected.get("exit_price") or 0.0),
                 "contracts": int(selected.get("contracts") or 1),
                 "pnl": float(selected.get("pnl") or 0.0),
+                "hold_minutes": float(selected.get("hold_time_minutes") or 15.0),
                 "underlying_price_at_entry": entry_context.get("underlying_price_at_entry", 0.0),
                 "ema5_at_entry": entry_context.get("ema5_at_entry", 0.0),
                 "ema14_at_entry": entry_context.get("ema14_at_entry", 0.0),
@@ -458,9 +459,13 @@ def render_trade_viewer():
                 "delta": float(selected.get("delta_entry") or 0.45),
                 "gamma_exposure": float(selected.get("gamma_entry") or 0.08),
                 "vol_ratio": float(selected.get("vol_ratio") or 1.15),
+                "implied_vol_entry": float(selected.get("implied_vol_entry") or 0.0),
+                "vix_at_entry": float(selected.get("vix_at_entry") or 0.0),
                 "execution_score": float(selected.get("entry_execution_score") or 85.0),
+                "volatility_edge_score": float(selected.get("volatility_edge_score") or 70.0),
+                "timing_score": float(selected.get("timing_score") or 70.0),
+                "risk_reward_score": float(selected.get("risk_reward_score") or 70.0),
                 "trade_quality_score": float(selected.get("trade_quality_score") or 90.0),
-                "hold_minutes": float(selected.get("hold_time_minutes") or 15.0)
             }
             res = adapter.get_critique(template, quant_dict, model="")
             st.markdown(res)
