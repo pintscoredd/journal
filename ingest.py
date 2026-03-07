@@ -314,60 +314,73 @@ def parse_robinhood_to_trades(opt_df: pd.DataFrame) -> List[Dict[str, Any]]:
         groups[key].append(r)
 
     trades = []
+    
+    # Add market-hour times if time was not provided, and convert to UTC for DB
+    def safe_localize(dt, default_time_str):
+        et = pytz.timezone("America/New_York")
+        d = dt.date() if hasattr(dt, "date") else dt
+        t = dt.time() if hasattr(dt, "time") and dt.time() != datetime.min.time() else datetime.strptime(default_time_str, "%H:%M").time()
+        return et.localize(datetime.combine(d, t)).astimezone(pytz.UTC)
+
     for key, group in groups.items():
-        btos = [x for x in group if x["trans"] == "BTO"]
-        exits = [x for x in group if x["trans"] in ("STC", "OEXP")]
-        if not btos or not exits:
-            continue
-        # Match by quantity; take first of each for simplicity
-        bto = btos[0]
-        ex = exits[0]
-        contracts = min(bto["contracts"], ex["contracts"])
-        entry_price = bto["price"]
-        exit_price = ex["price"]
-        entry_dt = bto["date"]
-        exit_dt = ex["date"]
-        if not entry_dt:
-            entry_dt = datetime.now()
-        if not exit_dt:
-            exit_dt = entry_dt
-
-        # Add market-hour times if time was not provided, and convert to UTC for DB
-        def safe_localize(dt, default_time_str):
-            et = pytz.timezone("America/New_York")
-            d = dt.date() if hasattr(dt, "date") else dt
-            t = dt.time() if hasattr(dt, "time") and dt.time() != datetime.min.time() else datetime.strptime(default_time_str, "%H:%M").time()
-            return et.localize(datetime.combine(d, t)).astimezone(pytz.UTC)
+        # Sort chronologically to naturally pair earlier BTOs with earlier STCs
+        group_sorted = sorted(group, key=lambda x: x["date"] if x["date"] else datetime.min)
+        btos = [x for x in group_sorted if x["trans"] == "BTO"]
+        exits = [x for x in group_sorted if x["trans"] in ("STC", "OEXP")]
+        
+        while btos and exits:
+            bto = btos[0]
+            ex = exits[0]
             
-        entry_dt = safe_localize(entry_dt, "09:35")
-        exit_dt = safe_localize(exit_dt, "15:55")
+            contracts = min(bto["contracts"], ex["contracts"])
+            if contracts <= 0:
+                if bto["contracts"] <= 0: btos.pop(0)
+                if ex["contracts"] <= 0: exits.pop(0)
+                continue
 
-        pnl = (exit_price - entry_price) * 100 * contracts
+            entry_price = bto["price"]
+            exit_price = ex["price"]
+            entry_dt = bto["date"] if bto["date"] else datetime.now()
+            exit_dt = ex["date"] if ex["date"] else entry_dt
 
-        # Parse expiry date for Trade.expiry
-        expiry_date = None
-        if bto.get("expiry_str"):
-            try:
-                expiry_date = pd.to_datetime(bto["expiry_str"]).date()
-            except Exception:
-                pass
-        if not expiry_date and entry_dt:
-            expiry_date = entry_dt.date() if hasattr(entry_dt, "date") else None
+            safe_entry_dt = safe_localize(entry_dt, "09:35")
+            safe_exit_dt = safe_localize(exit_dt, "15:55")
 
-        ticker = bto["ticker"]
-        if ticker.upper() == "SPX":
-            ticker = "^SPX"
+            pnl = (exit_price - entry_price) * 100 * contracts
 
-        trades.append({
-            "ticker": ticker,
-            "option_type": bto["option_type"],
-            "strike": bto["strike"],
-            "expiry": expiry_date,
-            "contracts": contracts,
-            "entry_price": entry_price,
-            "exit_price": exit_price,
-            "entry_time": entry_dt,
-            "exit_time": exit_dt,
-            "pnl": pnl,
-        })
+            # Parse expiry date for Trade.expiry
+            expiry_date = None
+            if bto.get("expiry_str"):
+                try:
+                    expiry_date = pd.to_datetime(bto["expiry_str"]).date()
+                except Exception:
+                    pass
+            if not expiry_date and safe_entry_dt:
+                expiry_date = safe_entry_dt.date() if hasattr(safe_entry_dt, "date") else None
+
+            ticker = bto["ticker"]
+            if ticker.upper() == "SPX":
+                ticker = "^SPX"
+
+            trades.append({
+                "ticker": ticker,
+                "option_type": bto["option_type"],
+                "strike": bto["strike"],
+                "expiry": expiry_date,
+                "contracts": contracts,
+                "entry_price": entry_price,
+                "exit_price": exit_price,
+                "entry_time": safe_entry_dt,
+                "exit_time": safe_exit_dt,
+                "pnl": pnl,
+            })
+            
+            bto["contracts"] -= contracts
+            ex["contracts"] -= contracts
+            
+            if bto["contracts"] <= 0:
+                btos.pop(0)
+            if ex["contracts"] <= 0:
+                exits.pop(0)
+
     return trades
