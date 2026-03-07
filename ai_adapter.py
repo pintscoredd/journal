@@ -25,7 +25,7 @@ class AIAdapter:
         # Default models
         if not model:
             if self.provider == "gemini":
-                model = "gemini-1.5-pro-latest"
+                model = "gemini-2.5-flash"
             elif self.provider == "groq":
                 model = "llama3-70b-8192"
             else:

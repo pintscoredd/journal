@@ -119,20 +119,32 @@ def render_new_trade():
         entry_price = c1.number_input("Entry Price", value=5.0, step=0.1)
         exit_price = c2.number_input("Exit Price", value=6.0, step=0.1)
         
+        def parse_time(ts: str) -> datetime.time:
+            ts = ''.join(filter(str.isdigit, ts))
+            if not ts: return datetime.strptime("0700", "%H%M").time()
+            if len(ts) <= 2: ts = ts.zfill(2) + "00"
+            elif len(ts) == 3: ts = "0" + ts
+            elif len(ts) > 4: ts = ts[:4]
+            try:
+                return datetime.strptime(ts, "%H%M").time()
+            except:
+                return datetime.strptime("0700", "%H%M").time()
+
         t1, t2, t3 = st.columns(3)
         trade_date = t1.date_input("Trade Date", value=datetime.today())
-        # step=60 allows selecting exact minute
-        entry_time_input = t2.time_input("Entry Time (PST)", value=datetime.strptime("07:00", "%H:%M").time(), step=60)
-        exit_time_input = t3.time_input("Exit Time (PST)", value=datetime.strptime("07:15", "%H:%M").time(), step=60)
+        entry_time_input = t2.text_input("Entry Time (PST) e.g. 07:15", value="07:00")
+        exit_time_input = t3.text_input("Exit Time (PST) e.g. 07:30", value="07:15")
         
         submitted = st.form_submit_button("Save Trade")
         if submitted:
             import uuid
             session = get_session()
             try:
+                parsed_entry = parse_time(entry_time_input)
+                parsed_exit = parse_time(exit_time_input)
                 # Combine date and time
-                entry_dt = datetime.combine(trade_date, entry_time_input)
-                exit_dt = datetime.combine(trade_date, exit_time_input)
+                entry_dt = datetime.combine(trade_date, parsed_entry)
+                exit_dt = datetime.combine(trade_date, parsed_exit)
                 
                 # Ensure UTC awareness for yfinance lookup
                 entry_dt_utc = pd.to_datetime(entry_dt).tz_localize('America/Los_Angeles').tz_convert('UTC')
@@ -206,6 +218,8 @@ def render_trade_viewer():
             end_date = db_exit + timedelta(hours=1)
             mask = (md.index >= start_date) & (md.index <= end_date)
             plot_md = md.loc[mask].copy()
+            plot_md = plot_md.sort_index()
+            plot_md = plot_md[~plot_md.index.duplicated(keep='first')]
             
             if not plot_md.empty:
                 # Calculate VWAP
@@ -217,17 +231,22 @@ def render_trade_viewer():
                 for idx, row in plot_md.iterrows():
                     chart_data.append({
                         "time": int(idx.timestamp()),
-                        "open": row["Open"],
-                        "high": row["High"],
-                        "low": row["Low"],
-                        "close": row["Close"]
+                        "open": float(row["Open"]),
+                        "high": float(row["High"]),
+                        "low": float(row["Low"]),
+                        "close": float(row["Close"])
                     })
                 
-                vwap_data = [{"time": int(idx.timestamp()), "value": val} for idx, val in plot_md["vwap"].items()]
-                ma5_data = [{"time": int(idx.timestamp()), "value": val} for idx, val in plot_md["ma5"].dropna().items()]
+                vwap_data = [{"time": int(idx.timestamp()), "value": float(val)} for idx, val in plot_md["vwap"].dropna().items()]
+                ma5_data = [{"time": int(idx.timestamp()), "value": float(val)} for idx, val in plot_md["ma5"].dropna().items()]
                 
-                entry_ts = int(db_entry.timestamp())
-                exit_ts = int(db_exit.timestamp())
+                # Markers need strictly to be mapped to data domain correctly.
+                # Find closest timestamps in data to avoid chart errors
+                closest_entry = min(chart_data, key=lambda x: abs(x['time'] - int(db_entry.timestamp())))['time']
+                closest_exit = min(chart_data, key=lambda x: abs(x['time'] - int(db_exit.timestamp())))['time']
+                
+                entry_ts = closest_entry
+                exit_ts = closest_exit
                 
                 chart_html = f"""
                 <!DOCTYPE html>
