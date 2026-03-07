@@ -58,6 +58,30 @@ def get_all_trades_df():
     finally:
         session.close()
 
+# --- HELPERS ---
+def _filter_option_trades(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    Best-effort filter to keep only option trades from a broker CSV.
+    Detects options via Description / Instrument text containing 'call' or 'put'.
+    Falls back to the full DataFrame if no clear option rows are found.
+    """
+    if df.empty:
+        return df
+
+    # Prefer Description, otherwise Instrument, otherwise first string-like column
+    col_map = {c.lower(): c for c in df.columns}
+    desc_col = col_map.get("description") or col_map.get("instrument")
+    if not desc_col:
+        # Try to guess a text column
+        text_cols = [c for c in df.columns if df[c].dtype == "object"]
+        desc_col = text_cols[0] if text_cols else df.columns[0]
+
+    desc_series = df[desc_col].astype(str)
+    mask = desc_series.str.contains("call", case=False, na=False) | desc_series.str.contains("put", case=False, na=False)
+    opt_df = df[mask].copy()
+    # If nothing matched, just return the original so the user still sees something
+    return opt_df if not opt_df.empty else df
+
 # --- PAGES ---
 def render_dashboard():
     st.header("Dashboard")
@@ -120,10 +144,57 @@ def render_new_trade():
     
     file = st.file_uploader("Upload CSV (Robinhood format example)", type=["csv"])
     if file:
-        df = import_trades_csv(file)
-        st.dataframe(df)
-        if st.button("Save to DB (Dummy Implementation)"):
-            st.success("Ingestion logic would process this and enrich quant DB elements here.")
+        try:
+            raw_df = import_trades_csv(file)
+        except ValueError as e:
+            st.error(str(e))
+            raw_df = None
+
+        if raw_df is not None:
+            opt_df = _filter_option_trades(raw_df)
+
+            if opt_df is raw_df:
+                st.info("No clear option rows detected; showing full CSV.")
+            else:
+                st.subheader("Detected option trades from CSV")
+
+            # Choose a compact, option-focused column set if available
+            preferred_cols = [
+                "Activity Date",
+                "Process Date",
+                "Instrument",
+                "Description",
+                "Trans Code",
+                "Quantity",
+                "Price",
+                "Amount",
+            ]
+            present_cols = [c for c in preferred_cols if c in opt_df.columns]
+            view_df = opt_df[present_cols].copy() if present_cols else opt_df.copy()
+
+            # Add an approve/deny toggle the user can edit
+            if "approve" not in view_df.columns:
+                view_df.insert(0, "approve", True)
+
+            st.caption("Toggle 'approve' to include/exclude individual option trades before importing.")
+            edited_df = st.data_editor(
+                view_df,
+                use_container_width=True,
+                num_rows="dynamic",
+                key="csv_option_editor",
+            )
+
+            approved = edited_df[edited_df.get("approve", True) == True]  # noqa: E712
+            denied = len(edited_df) - len(approved)
+
+            st.write(f"Approved trades: **{len(approved)}**, Denied trades: **{denied}**")
+
+            if st.button("Import approved trades (coming soon)"):
+                # Placeholder for future mapping into Trade rows.
+                st.success(
+                    f"Approve/Deny selections captured. "
+                    f"{len(approved)} trades would be imported; {denied} would be skipped."
+                )
     
     st.subheader("Manual Quick Entry")
     with st.form("manual_entry"):
