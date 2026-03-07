@@ -28,6 +28,19 @@ def run_cached_monte_carlo(trades_df, num_sims, initial, block_size):
     return paths, metrics
 
 # --- DATA FETCH ---
+def parse_time(ts: str) -> datetime.time:
+    ts = ''.join(filter(str.isdigit, ts))
+    if not ts: return datetime.strptime("070000", "%H%M%S").time()
+    if len(ts) <= 2: ts = ts.zfill(2) + "0000"
+    elif len(ts) == 3: ts = "0" + ts + "00"
+    elif len(ts) == 4: ts = ts + "00"
+    elif len(ts) == 5: ts = "0" + ts
+    elif len(ts) > 6: ts = ts[:6]
+    try:
+        return datetime.strptime(ts, "%H%M%S").time()
+    except:
+        return datetime.strptime("070000", "%H%M%S").time()
+
 def get_all_trades_df():
     session = get_session()
     try:
@@ -125,19 +138,6 @@ def render_new_trade():
         entry_price = c1.number_input("Entry Price", value=5.0, step=0.1)
         exit_price = c2.number_input("Exit Price", value=6.0, step=0.1)
         
-        def parse_time(ts: str) -> datetime.time:
-            ts = ''.join(filter(str.isdigit, ts))
-            if not ts: return datetime.strptime("070000", "%H%M%S").time()
-            if len(ts) <= 2: ts = ts.zfill(2) + "0000"
-            elif len(ts) == 3: ts = "0" + ts + "00"
-            elif len(ts) == 4: ts = ts + "00"
-            elif len(ts) == 5: ts = "0" + ts
-            elif len(ts) > 6: ts = ts[:6]
-            try:
-                return datetime.strptime(ts, "%H%M%S").time()
-            except:
-                return datetime.strptime("070000", "%H%M%S").time()
-
         t1, t2, t3 = st.columns(3)
         trade_date = t1.date_input("Trade Date", value=datetime.today())
         entry_time_input = t2.text_input("Entry Time (PST) e.g. 07:15:30", value="07:00:00")
@@ -220,6 +220,14 @@ def render_trade_viewer():
     if st.session_state.edit_mode:
         st.markdown("### Edit Selected Trade")
         with st.form(f"edit_trade_{trade_id}"):
+            db_en = pd.to_datetime(selected['entry_time'])
+            db_ex = pd.to_datetime(selected['exit_time'])
+            if db_en.tzinfo is None: db_en = db_en.tz_localize('UTC')
+            if db_ex.tzinfo is None: db_ex = db_ex.tz_localize('UTC')
+            
+            en_pst = db_en.tz_convert('America/Los_Angeles')
+            ex_pst = db_ex.tz_convert('America/Los_Angeles')
+            
             e_col1, e_col2 = st.columns(2)
             n_tick = e_col1.text_input("Ticker", value=str(selected['ticker']))
             n_opt = e_col2.selectbox("Option Type", ["call", "put"], index=0 if selected['option_type']=='call' else 1)
@@ -232,17 +240,32 @@ def render_trade_viewer():
             n_en = e_col6.number_input("Entry Price", value=float(selected['entry_price'] or 0), step=0.1)
             n_ex = e_col7.number_input("Exit Price", value=float(selected['exit_price'] or 0), step=0.1)
             
+            t_col1, t_col2, t_col3 = st.columns(3)
+            n_date = t_col1.date_input("Trade Date", value=en_pst.date())
+            n_t_en = t_col2.text_input("Entry Time (PST)", value=en_pst.strftime("%H:%M:%S"))
+            n_t_ex = t_col3.text_input("Exit Time (PST)", value=ex_pst.strftime("%H:%M:%S"))
+            
             if st.form_submit_button("Save Changes"):
                 sess = get_session()
                 try:
                     t_upd = sess.query(Trade).filter_by(id=trade_id).first()
                     if t_upd:
+                        p_en = parse_time(n_t_en)
+                        p_ex = parse_time(n_t_ex)
+                        
+                        dt_en = datetime.combine(n_date, p_en)
+                        dt_ex = datetime.combine(n_date, p_ex)
+                        n_utc_en = pd.to_datetime(dt_en).tz_localize('America/Los_Angeles').tz_convert('UTC')
+                        n_utc_ex = pd.to_datetime(dt_ex).tz_localize('America/Los_Angeles').tz_convert('UTC')
+                        
                         t_upd.ticker = n_tick
                         t_upd.option_type = n_opt
                         t_upd.strike = n_strike
                         t_upd.contracts = n_contracts
                         t_upd.entry_price = n_en
                         t_upd.exit_price = n_ex
+                        t_upd.entry_time = n_utc_en
+                        t_upd.exit_time = n_utc_ex
                         t_upd.pnl = (n_ex - n_en) * 100 * n_contracts
                         sess.commit()
                         st.session_state.edit_mode = False
