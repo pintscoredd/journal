@@ -5,6 +5,7 @@ import pandas as pd
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
+import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 
 from db import get_session, Trade
@@ -118,10 +119,11 @@ def render_new_trade():
         entry_price = c1.number_input("Entry Price", value=5.0, step=0.1)
         exit_price = c2.number_input("Exit Price", value=6.0, step=0.1)
         
-        t1, t2 = st.columns(2)
+        t1, t2, t3 = st.columns(3)
         trade_date = t1.date_input("Trade Date", value=datetime.today())
-        # Default to regular market hours to ensure we get data
-        entry_time_input = t2.time_input("Entry Time (PST)", value=datetime.strptime("07:00", "%H:%M").time())
+        # step=60 allows selecting exact minute
+        entry_time_input = t2.time_input("Entry Time (PST)", value=datetime.strptime("07:00", "%H:%M").time(), step=60)
+        exit_time_input = t3.time_input("Exit Time (PST)", value=datetime.strptime("07:15", "%H:%M").time(), step=60)
         
         submitted = st.form_submit_button("Save Trade")
         if submitted:
@@ -130,9 +132,11 @@ def render_new_trade():
             try:
                 # Combine date and time
                 entry_dt = datetime.combine(trade_date, entry_time_input)
+                exit_dt = datetime.combine(trade_date, exit_time_input)
+                
                 # Ensure UTC awareness for yfinance lookup
                 entry_dt_utc = pd.to_datetime(entry_dt).tz_localize('America/Los_Angeles').tz_convert('UTC')
-                exit_dt_utc = entry_dt_utc + timedelta(minutes=15) # default pseudo hold time
+                exit_dt_utc = pd.to_datetime(exit_dt).tz_localize('America/Los_Angeles').tz_convert('UTC')
                 
                 new_trade = Trade(
                     trade_uuid=str(uuid.uuid4()),
@@ -161,7 +165,25 @@ def render_trade_viewer():
         st.info("No trades to display.")
         return
         
-    trade_id = st.selectbox("Select Trade", df['id'].values, format_func=lambda x: f"Trade {x} | {df[df['id']==x]['entry_time'].values[0]}")
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        trade_id = st.selectbox("Select Trade", df['id'].values, format_func=lambda x: f"Trade {x} | {df[df['id']==x]['entry_time'].values[0]}")
+    with col2:
+        st.write("") # push down to align
+        st.write("")
+        if st.button("Delete Trade", type="primary"):
+            session = get_session()
+            try:
+                t_del = session.query(Trade).filter_by(id=trade_id).first()
+                if t_del:
+                    session.delete(t_del)
+                    session.commit()
+                    st.rerun()
+            except Exception as e:
+                st.error("Error deleting.")
+            finally:
+                session.close()
+
     selected = df[df['id'] == trade_id].iloc[0]
     
     st.write(f"**Score**: {selected.get('trade_quality_score', 'N/A')}/100")
@@ -191,19 +213,77 @@ def render_trade_viewer():
                 plot_md['vwap'] = (plot_md['typ'] * plot_md['Volume']).cumsum() / plot_md['Volume'].cumsum()
                 plot_md['ma5'] = plot_md['Close'].rolling(5).mean()
                 
-                fig = go.Figure()
-                fig.add_trace(go.Candlestick(x=plot_md.index, open=plot_md['Open'], high=plot_md['High'], low=plot_md['Low'], close=plot_md['Close'], name="1m Price"))
-                fig.add_trace(go.Scatter(x=plot_md.index, y=plot_md['vwap'], mode='lines', name="VWAP", line=dict(color='yellow')))
-                fig.add_trace(go.Scatter(x=plot_md.index, y=plot_md['ma5'], mode='lines', name="5m MA", line=dict(color='orange')))
+                chart_data = []
+                for idx, row in plot_md.iterrows():
+                    chart_data.append({
+                        "time": int(idx.timestamp()),
+                        "open": row["Open"],
+                        "high": row["High"],
+                        "low": row["Low"],
+                        "close": row["Close"]
+                    })
                 
-                # Markers
-                fig.add_vline(x=db_entry.timestamp() * 1000, line_color="green", annotation_text="Entry")
-                fig.add_vline(x=db_exit.timestamp() * 1000, line_color="red", annotation_text="Exit")
+                vwap_data = [{"time": int(idx.timestamp()), "value": val} for idx, val in plot_md["vwap"].items()]
+                ma5_data = [{"time": int(idx.timestamp()), "value": val} for idx, val in plot_md["ma5"].dropna().items()]
                 
-                # Make chart background fit the dark theme beautifully
-                fig.update_layout(template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
+                entry_ts = int(db_entry.timestamp())
+                exit_ts = int(db_exit.timestamp())
                 
-                st.plotly_chart(fig, use_container_width=True)
+                chart_html = f"""
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <script src="https://unpkg.com/lightweight-charts/dist/lightweight-charts.standalone.production.js"></script>
+                </head>
+                <body style="margin: 0; background-color: #0e1117;">
+                    <div id="chart"></div>
+                    <script>
+                        const chart = LightweightCharts.createChart(document.getElementById('chart'), {{
+                            width: window.innerWidth,
+                            height: 400,
+                            layout: {{
+                                backgroundColor: '#0e1117',
+                                textColor: '#d1d4dc',
+                            }},
+                            grid: {{
+                                vertLines: {{ color: '#2b2b43' }},
+                                horzLines: {{ color: '#2b2b43' }},
+                            }},
+                            crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
+                            timeScale: {{ timeVisible: true, secondsVisible: false }},
+                        }});
+                        
+                        const candlestickSeries = chart.addCandlestickSeries({{
+                            upColor: '#26a69a',
+                            downColor: '#ef5350',
+                            borderVisible: false,
+                            wickUpColor: '#26a69a',
+                            wickDownColor: '#ef5350'
+                        }});
+                        const data = {json.dumps(chart_data)};
+                        candlestickSeries.setData(data);
+                        
+                        const vwapSeries = chart.addLineSeries({{
+                            color: '#eade52',
+                            lineWidth: 2,
+                            title: 'VWAP'
+                        }});
+                        vwapSeries.setData({json.dumps(vwap_data)});
+                        
+                        candlestickSeries.setMarkers([
+                            {{ time: {entry_ts}, position: 'belowBar', color: '#26a69a', shape: 'arrowUp', text: 'Entry' }},
+                            {{ time: {exit_ts}, position: 'aboveBar', color: '#ef5350', shape: 'arrowDown', text: 'Exit' }}
+                        ]);
+                        chart.timeScale().fitContent();
+                        
+                        window.addEventListener('resize', () => {{
+                            chart.resize(window.innerWidth, 400);
+                        }});
+                    </script>
+                </body>
+                </html>
+                """
+                components.html(chart_html, height=400)
             else:
                 st.warning(f"No market data bounded between {start_date.strftime('%Y-%m-%d %H:%M')} and {end_date.strftime('%Y-%m-%d %H:%M')}.")
                 st.info("Tip: Double check if your entry time was during regular market hours!")
