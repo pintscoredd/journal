@@ -185,13 +185,21 @@ def render_trade_viewer():
         st.info("No trades to display.")
         return
         
-    col1, col2 = st.columns([3, 1])
+    if 'edit_mode' not in st.session_state:
+        st.session_state.edit_mode = False
+        
+    col1, col2, col3 = st.columns([3, 1, 1])
     with col1:
         trade_id = st.selectbox("Select Trade", df['id'].values, format_func=lambda x: f"Trade {x} | {df[df['id']==x]['entry_time'].values[0]}")
     with col2:
         st.write("") # push down to align
         st.write("")
-        if st.button("Delete Trade", type="primary"):
+        if st.button("Edit Trade", use_container_width=True):
+            st.session_state.edit_mode = not st.session_state.edit_mode
+    with col3:
+        st.write("") # push down to align
+        st.write("")
+        if st.button("Delete Trade", type="primary", use_container_width=True):
             session = get_session()
             try:
                 t_del = session.query(Trade).filter_by(id=trade_id).first()
@@ -209,7 +217,8 @@ def render_trade_viewer():
     st.write(f"**Score**: {selected.get('trade_quality_score', 'N/A')}/100")
     st.write(f"PnL: ${selected['pnl']}")
     
-    with st.expander("Edit Selected Trade"):
+    if st.session_state.edit_mode:
+        st.markdown("### Edit Selected Trade")
         with st.form(f"edit_trade_{trade_id}"):
             e_col1, e_col2 = st.columns(2)
             n_tick = e_col1.text_input("Ticker", value=str(selected['ticker']))
@@ -236,6 +245,7 @@ def render_trade_viewer():
                         t_upd.exit_price = n_ex
                         t_upd.pnl = (n_ex - n_en) * 100 * n_contracts
                         sess.commit()
+                        st.session_state.edit_mode = False
                         st.rerun()
                 except Exception as e:
                     st.error(f"Update failed: {e}")
