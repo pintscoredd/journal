@@ -315,36 +315,42 @@ def render_trade_viewer():
     # AI Critique
     if st.button("Generate AI Critique"):
         provider = st.session_state.get('ai_provider', 'gemini')
-        adapter = AIAdapter(provider=provider)
-        with open("single_trade_critique.txt", "r") as f:
-            template = f.read()
-        
-        # Serialize only numeric quant aspects to pass
-        quant_dict = {
-            "delta": selected.get("delta_entry", 0),
-            "gamma_exposure": selected.get("gamma_entry", 0),
-            "vol_ratio": selected.get("vol_ratio", 1.0),
-            "execution_score": selected.get("entry_execution_score", 0),
-            "trade_quality_score": selected.get("trade_quality_score", 0),
-            "hold_minutes": selected.get("hold_time_minutes", 0)
-        }
-        res = adapter.get_critique(template, quant_dict, model="")
-        st.markdown(res)
+        try:
+            adapter = AIAdapter(provider=provider)
+            with open("single_trade_critique.txt", "r") as f:
+                template = f.read()
+            
+            # Serialize only numeric quant aspects to pass
+            quant_dict = {
+                "delta": selected.get("delta_entry", 0),
+                "gamma_exposure": selected.get("gamma_entry", 0),
+                "vol_ratio": selected.get("vol_ratio", 1.0),
+                "execution_score": selected.get("entry_execution_score", 0),
+                "trade_quality_score": selected.get("trade_quality_score", 0),
+                "hold_minutes": selected.get("hold_time_minutes", 0)
+            }
+            res = adapter.get_critique(template, quant_dict, model="")
+            st.markdown(res)
+        except Exception as e:
+            st.error(f"AI Connection Failed: {e}")
 
 def render_reports():
     st.header("Weekly Report Generation")
     
     if st.button("Generate Weekly Auto Report"):
         provider = st.session_state.get('ai_provider', 'gemini')
-        adapter = AIAdapter(provider=provider)
-        with open("weekly_report.txt", "r") as f:
-            template = f.read()
-            
-        mock_agg_data = {"expectancy": 15.50, "win_rate": 0.65, "total_pnl": 500}
-        with st.spinner("Analyzing weekly data..."):
-            res = adapter.get_critique(template, mock_agg_data)
-        st.success("Report Generated:")
-        st.markdown(res)
+        try:
+            adapter = AIAdapter(provider=provider)
+            with open("weekly_report.txt", "r") as f:
+                template = f.read()
+                
+            mock_agg_data = {"expectancy": 15.50, "win_rate": 0.65, "total_pnl": 500}
+            with st.spinner("Analyzing weekly data..."):
+                res = adapter.get_critique(template, mock_agg_data)
+            st.success("Report Generated:")
+            st.markdown(res)
+        except Exception as e:
+            st.error(f"AI Connection Failed: {e}")
 
 def render_settings():
     st.header("Settings & Secure Keys")

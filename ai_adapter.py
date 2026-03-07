@@ -12,9 +12,13 @@ class AIAdapter:
         self.provider = provider.lower()
         if self.provider == "gemini":
             key = get_api_key("gemini_api_key")
+            if not key:
+                raise ValueError("Gemini API key is blank. Please configure it in secrets.toml or Settings.")
             self.gemini_client = genai.Client(api_key=key)
         elif self.provider == "groq":
             key = get_api_key("groq_api_key")
+            if not key:
+                raise ValueError("Groq API key is blank. Please configure it in secrets.toml or Settings.")
             self.groq_client = Groq(api_key=key)
 
     def _generate_cache_key(self, prompt: str, quant_json: str, model: str) -> str:
