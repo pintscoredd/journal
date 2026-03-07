@@ -70,7 +70,7 @@ def get_vix_for_day(date_obj: datetime) -> float:
         if (time.time() - mtime) < CACHE_TTL_SECONDS:
             try:
                 df = pd.read_parquet(cache_file)
-            except:
+            except (OSError, ValueError):
                 pass
                 
     if df.empty:

@@ -8,11 +8,12 @@ import plotly.graph_objects as go
 import streamlit.components.v1 as components
 from datetime import datetime, timedelta
 
-from db import get_session, Trade
+from db import get_session, Trade, Secret
 from secrets_store import store_api_key, get_master_key, encrypt_key
 from ingest import get_market_data, import_trades_csv
 from ai_adapter import AIAdapter
 from montecarlo import simulate_equity_paths, calculate_risk_metrics
+from enrichment import enrich_trade
 
 # --- CACHING ---
 @st.cache_data(ttl=3600)
@@ -163,6 +164,7 @@ def render_new_trade():
                     ticker=ticker,
                     option_type=option_type,
                     strike=strike,
+                    expiry=trade_date,
                     entry_price=entry_price,
                     exit_price=exit_price,
                     entry_time=entry_dt_utc,
@@ -213,6 +215,14 @@ def render_trade_viewer():
                 session.close()
 
     selected = df[df['id'] == trade_id].iloc[0]
+
+    if st.button("Recompute quant metrics (IV, Greeks, score)"):
+        err = enrich_trade(int(trade_id))
+        if err:
+            st.error(err)
+        else:
+            st.success("Trade enriched. Refresh the viewer.")
+            st.rerun()
     
     st.write(f"**Score**: {selected.get('trade_quality_score', 'N/A')}/100")
     st.write(f"PnL: ${selected['pnl']}")
@@ -261,6 +271,7 @@ def render_trade_viewer():
                         t_upd.ticker = n_tick
                         t_upd.option_type = n_opt
                         t_upd.strike = n_strike
+                        t_upd.expiry = n_date
                         t_upd.contracts = n_contracts
                         t_upd.entry_price = n_en
                         t_upd.exit_price = n_ex
@@ -484,7 +495,9 @@ def render_settings():
     st.selectbox("AI Critique Provider", ["noop", "gemini", "groq"], index=1, key="ai_provider")
     st.number_input("Monte Carlo Sample Size", 100, 50000, 10000, key="mc_sims")
     st.number_input("Base Capital for sizing", 50, 100000, 3000, key="capital")
-    st.checkbox("Use Supabase Hosted DB", value=False, key="use_supabase")
+    use_sb = st.checkbox("Use Supabase Hosted DB", value=False, key="use_supabase")
+    if use_sb:
+        st.caption("Set USE_SUPABASE=true and SUPABASE_URL in environment or secrets and restart the app for this to take effect.")
     
     st.subheader("AI API Keys Secure Store")
     st.info("Keys are AES encryptly stored into the SQLite 'secrets' table using PBKDF2 Master Password or keys from secrets.toml")

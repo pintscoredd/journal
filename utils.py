@@ -14,5 +14,5 @@ def safely_divide(a, b, default=0.0):
         if b == 0 or pd.isna(b):
             return default
         return a / b
-    except:
+    except (ZeroDivisionError, TypeError, ValueError):
         return default
