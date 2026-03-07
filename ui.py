@@ -307,11 +307,28 @@ def render_trade_viewer():
                 
                 closest_idx = plot_md.index.get_indexer([db_entry], method='nearest')[0]
                 entry_row = plot_md.iloc[closest_idx]
+                
+                pre_candles = []
+                # grab the 3 precedence candles preceding entry
+                for i in range(1, 4):
+                    if closest_idx - i >= 0:
+                        row = plot_md.iloc[closest_idx - i]
+                        pre_candles.append({
+                            "offset_minutes": -i,
+                            "high": float(row["High"]),
+                            "low": float(row["Low"]),
+                            "close": float(row["Close"]),
+                            "ema5": float(row["ema5"]),
+                            "ema14": float(row["ema14"]),
+                            "ema25": float(row["ema25"])
+                        })
+                
                 entry_context = {
                     "underlying_price_at_entry": float(entry_row["Close"]),
                     "ema5_at_entry": float(entry_row["ema5"]),
                     "ema14_at_entry": float(entry_row["ema14"]),
                     "ema25_at_entry": float(entry_row["ema25"]),
+                    "preceding_3_candles": pre_candles,
                 }
                 
                 chart_data = []
@@ -426,6 +443,7 @@ def render_trade_viewer():
                 "ema5_at_entry": entry_context.get("ema5_at_entry", 0.0),
                 "ema14_at_entry": entry_context.get("ema14_at_entry", 0.0),
                 "ema25_at_entry": entry_context.get("ema25_at_entry", 0.0),
+                "preceding_3_candles": entry_context.get("preceding_3_candles", []),
                 "delta": float(selected.get("delta_entry") or 0.45),
                 "gamma_exposure": float(selected.get("gamma_entry") or 0.08),
                 "vol_ratio": float(selected.get("vol_ratio") or 1.15),
