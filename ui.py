@@ -275,6 +275,8 @@ def render_trade_viewer():
                 finally:
                     sess.close()
     
+    entry_context = {}
+    
     # Replay Chart
     st.subheader("Replay Chart")
     try:
@@ -302,6 +304,15 @@ def render_trade_viewer():
                 plot_md['ema5'] = plot_md['Close'].ewm(span=5, adjust=False).mean()
                 plot_md['ema14'] = plot_md['Close'].ewm(span=14, adjust=False).mean()
                 plot_md['ema25'] = plot_md['Close'].ewm(span=25, adjust=False).mean()
+                
+                closest_idx = plot_md.index.get_indexer([db_entry], method='nearest')[0]
+                entry_row = plot_md.iloc[closest_idx]
+                entry_context = {
+                    "underlying_price_at_entry": float(entry_row["Close"]),
+                    "ema5_at_entry": float(entry_row["ema5"]),
+                    "ema14_at_entry": float(entry_row["ema14"]),
+                    "ema25_at_entry": float(entry_row["ema25"]),
+                }
                 
                 chart_data = []
                 for idx, row in plot_md.iterrows():
@@ -411,6 +422,10 @@ def render_trade_viewer():
                 "exit_price": float(selected.get("exit_price") or 0.0),
                 "contracts": int(selected.get("contracts") or 1),
                 "pnl": float(selected.get("pnl") or 0.0),
+                "underlying_price_at_entry": entry_context.get("underlying_price_at_entry", 0.0),
+                "ema5_at_entry": entry_context.get("ema5_at_entry", 0.0),
+                "ema14_at_entry": entry_context.get("ema14_at_entry", 0.0),
+                "ema25_at_entry": entry_context.get("ema25_at_entry", 0.0),
                 "delta": float(selected.get("delta_entry") or 0.45),
                 "gamma_exposure": float(selected.get("gamma_entry") or 0.08),
                 "vol_ratio": float(selected.get("vol_ratio") or 1.15),
@@ -422,6 +437,8 @@ def render_trade_viewer():
             st.markdown(res)
         except Exception as e:
             st.error(f"AI Connection Failed: {e}")
+            import traceback
+            st.error(traceback.format_exc())
 
 def render_reports():
     st.header("Weekly Report Generation")
