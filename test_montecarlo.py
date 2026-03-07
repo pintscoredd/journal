@@ -1,7 +1,7 @@
 import pytest
 import numpy as np
 import pandas as pd
-from spx_journal.montecarlo import simulate_equity_paths, block_bootstrap, calculate_risk_metrics
+from montecarlo import simulate_equity_paths, block_bootstrap, calculate_risk_metrics
 
 def test_block_bootstrap():
     returns = np.array([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])

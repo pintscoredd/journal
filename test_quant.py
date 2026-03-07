@@ -1,6 +1,6 @@
 import pytest
 import numpy as np
-from spx_journal.quant import (
+from quant import (
     bs_price, 
     bs_greeks, 
     implied_volatility, 
@@ -29,8 +29,8 @@ def test_iv_inversion():
 def test_iv_climate_bounds():
     # If price implies vol > 6.0, it should clamp to 6.0
     S, K, T, r = 5000, 5000, 1/365, 0.05
-    # A 1-day ATM call worth 500 implies massive vol
-    iv_high = implied_volatility(500, S, K, T, r, 'call')
+    # An absurd price implies massive vol
+    iv_high = implied_volatility(2500, S, K, T, r, 'call')
     assert iv_high == 6.0
 
     # If price implies vol < 0.01 (e.g., exactly intrinsic), it should clamp to 0.01

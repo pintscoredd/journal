@@ -4,8 +4,8 @@ import time
 from typing import Dict, Any, Optional
 import google.generativeai as genai
 from groq import Groq
-from spx_journal.db import get_session, AICache
-from spx_journal.secrets_store import get_api_key
+from db import get_session, AICache
+from secrets_store import get_api_key
 
 class AIAdapter:
     def __init__(self, provider: str = "noop"):

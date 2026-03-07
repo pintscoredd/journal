@@ -7,11 +7,11 @@ import plotly.express as px
 import plotly.graph_objects as go
 from datetime import datetime, timedelta
 
-from spx_journal.db import get_session, Trade
-from spx_journal.secrets_store import store_api_key, get_master_key, encrypt_key
-from spx_journal.ingest import get_market_data, import_trades_csv
-from spx_journal.ai_adapter import AIAdapter
-from spx_journal.montecarlo import simulate_equity_paths, calculate_risk_metrics
+from db import get_session, Trade
+from secrets_store import store_api_key, get_master_key, encrypt_key
+from ingest import get_market_data, import_trades_csv
+from ai_adapter import AIAdapter
+from montecarlo import simulate_equity_paths, calculate_risk_metrics
 
 # --- CACHING ---
 @st.cache_data(ttl=3600)
@@ -164,7 +164,7 @@ def render_trade_viewer():
     if st.button("Generate AI Critique"):
         provider = st.session_state.get('ai_provider', 'noop')
         adapter = AIAdapter(provider=provider)
-        with open("prompts/single_trade_critique.txt", "r") as f:
+        with open("single_trade_critique.txt", "r") as f:
             template = f.read()
         
         # Serialize only numeric quant aspects to pass
@@ -185,7 +185,7 @@ def render_reports():
     if st.button("Generate Weekly Auto Report"):
         provider = st.session_state.get('ai_provider', 'noop')
         adapter = AIAdapter(provider=provider)
-        with open("prompts/weekly_report.txt", "r") as f:
+        with open("weekly_report.txt", "r") as f:
             template = f.read()
             
         mock_agg_data = {"expectancy": 15.50, "win_rate": 0.65, "total_pnl": 500}

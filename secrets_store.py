@@ -4,7 +4,7 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 import streamlit as st
-from spx_journal.db import get_session, Secret
+from db import get_session, Secret
 
 def get_master_key():
     # Fallback cascade: st.secrets > environment

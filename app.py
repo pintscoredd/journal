@@ -1,7 +1,7 @@
 import os
 import streamlit as st
-from spx_journal.db import create_tables
-import spx_journal.ui as ui
+from db import create_tables
+import ui as ui
 
 st.set_page_config(
     page_title="SPX 0DTE Journal",

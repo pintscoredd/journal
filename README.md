@@ -18,7 +18,7 @@ pip install -r requirements.txt
 Start the Streamlit dashboard:
 
 ```bash
-PYTHONPATH=. streamlit run spx_journal/app.py
+PYTHONPATH=. streamlit run app.py
 ```
 
 ## Testing
@@ -26,7 +26,7 @@ PYTHONPATH=. streamlit run spx_journal/app.py
 To run the unit tests in a TDD fashion (tests cover Quant analytics with time-floor checks, Monte Carlo simulations, and more):
 
 ```bash
-PYTHONPATH=. pytest tests/
+PYTHONPATH=. pytest test_*.py
 ```
 
 ## Secure API Keys & Database
@@ -48,7 +48,7 @@ master_key = "PASTE_MASTER_KEY_HERE"
 
 1. Push this repository to GitHub.
 2. Log into Streamlit Community Cloud and 'Deploy an app'.
-3. Select this repository and specify `spx_journal/app.py` as the main script.
+3. Select this repository and specify `app.py` as the main script.
 4. Input the Master Key (and alternatively pure API keys) into the Advanced Settings -> Secrets box using the TOML format described above.
 5. In your locally running GUI under "Settings & AI Keys", you can click the export button to generate the encrypted TOML snippet needed for cloud database matching, if you prefer storing encrypted blobs over raw keys.
 

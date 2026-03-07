@@ -2,7 +2,7 @@ import pytest
 import pandas as pd
 import os
 from io import StringIO
-from spx_journal.ingest import import_trades_csv, get_market_data
+from ingest import import_trades_csv, get_market_data
 
 def test_import_trades_csv():
     csv_data = """Activity Date,Process Date,Settle Date,Instrument,Description,Trans Code,Quantity,Price,Amount
