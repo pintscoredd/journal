@@ -54,7 +54,14 @@ def get_all_trades_df():
             d = t.__dict__.copy()
             d.pop('_sa_instance_state', None)
             data.append(d)
-        return pd.DataFrame(data)
+        df = pd.DataFrame(data)
+        if not df.empty:
+            try:
+                # Persistent backup to prevent data loss on container/app reboot
+                df.to_csv("trades_backup.csv", index=False)
+            except Exception:
+                pass
+        return df
     finally:
         session.close()
 
@@ -671,9 +678,25 @@ def render_reports():
             # Filter to last 7 days of trades if desired, but user asked for "all the data from each trade".
             # To be safe and comprehensive, let's provide the active entries.
             # Clean dataframe for JSON serialization
-            df_cleaned = df.copy()
+            # Explicit PST formatting to prevent AI temporal confusion
+            time_cols = ['entry_time', 'exit_time', 'expiry', 'created_at']
+            for col in time_cols:
+                if col in df_cleaned.columns:
+                    def safe_format(x):
+                        if pd.isnull(x): return None
+                        try:
+                            dt = pd.to_datetime(x)
+                            if dt.tzinfo is None:
+                                dt = dt.tz_localize('UTC')
+                            return dt.tz_convert('America/Los_Angeles').strftime('%Y-%m-%d %H:%M:%S PST')
+                        except:
+                            return str(x)
+                    df_cleaned[col] = df_cleaned[col].apply(safe_format)
+            
+            # Catch any other remaining datetimes natively
             for col in df_cleaned.select_dtypes(include=['datetime64', 'datetimetz']).columns:
                 df_cleaned[col] = df_cleaned[col].astype(str)
+                
             df_cleaned = df_cleaned.replace({pd.NA: None, np.nan: None})
             
             # Optionally summarize to prevent token limits if there are thousands of trades,

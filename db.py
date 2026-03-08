@@ -100,8 +100,7 @@ def get_engine():
             raise ValueError("SUPABASE_URL must be provided when USE_SUPABASE is true")
     else:
         # Default local SQLite file
-        data_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
-        os.makedirs(data_dir, exist_ok=True)
+        data_dir = os.path.dirname(__file__)
         db_path = os.path.join(data_dir, 'journal.db')
         database_url = f"sqlite:///{db_path}"
     
