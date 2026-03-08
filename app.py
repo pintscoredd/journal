@@ -33,18 +33,18 @@ def apply_terminal_theme():
         
         /* Text Colors */
         h1, h2, h3, h4, h5, h6, p, span, div, label, .stMarkdown, .stText {
-            color: #4af626 !important;
+            color: #d3d3d3 !important;
         }
         
         /* Metrics */
         [data-testid="stMetricValue"] {
-            color: #4af626 !important;
+            color: #ffffff !important;
             font-size: 1.8rem !important;
             font-weight: 600 !important;
         }
         
         [data-testid="stMetricDelta"] {
-            color: #eade52 !important; /* warning/amber color for deltas */
+            color: #a0a0a0 !important;
         }
         
         /* Inputs and Selectboxes */
@@ -52,54 +52,54 @@ def apply_terminal_theme():
         div.stNumberInput > div > div > input,
         .stSelectbox > div > div > div, 
         textarea {
-            background-color: #051405 !important;
-            color: #4af626 !important;
-            border: 1px solid #4af626 !important;
+            background-color: #1a1a1a !important;
+            color: #ffffff !important;
+            border: 1px solid #555555 !important;
             border-radius: 0px !important;
         }
         
         /* Sidebar styling */
         section[data-testid="stSidebar"] {
             background-color: #050505 !important;
-            border-right: 2px solid #4af626 !important;
+            border-right: 2px solid #333333 !important;
         }
         
         /* Buttons */
         button[kind="primary"] {
-            background-color: #0f3d0f !important;
-            color: #4af626 !important;
-            border: 1px solid #4af626 !important;
+            background-color: #333333 !important;
+            color: #ffffff !important;
+            border: 1px solid #555555 !important;
             border-radius: 0 !important;
             text-transform: uppercase !important;
             font-weight: bold !important;
         }
         button[kind="primary"]:hover {
-            background-color: #4af626 !important;
-            color: #0a0a0a !important;
-            border-color: #4af626 !important;
+            background-color: #555555 !important;
+            color: #ffffff !important;
+            border-color: #777777 !important;
         }
         button[kind="secondary"] {
             background-color: #000000 !important;
-            color: #4af626 !important;
-            border: 1px dashed #4af626 !important;
+            color: #d3d3d3 !important;
+            border: 1px dashed #555555 !important;
             border-radius: 0 !important;
         }
         button[kind="secondary"]:hover {
-            background-color: #0f3d0f !important;
-            color: #4af626 !important;
+            background-color: #333333 !important;
+            color: #ffffff !important;
             border-style: solid !important;
         }
         
         /* Dataframes */
         [data-testid="stDataFrame"] {
-            border: 1px solid #4af626;
+            border: 1px solid #555555;
         }
         
         /* Success / Exception messages */
         div[data-testid="stAlert"] {
-            background-color: #0f1c0f !important;
-            color: #4af626 !important;
-            border-left: 4px solid #4af626 !important;
+            background-color: #1a1a1a !important;
+            color: #d3d3d3 !important;
+            border-left: 4px solid #555555 !important;
         }
         div[data-testid="stAlert"]:has(div.st-emotion-cache-1kqj0k3) {
             /* Error */

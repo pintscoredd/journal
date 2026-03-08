@@ -91,8 +91,8 @@ def render_dashboard():
     # Equity Curve
     fig = px.line(df, x='Trade Number', y='cum_pnl', title='Equity Curve', markers=True,
                   hover_data=['entry_time', 'ticker', 'pnl'])
-    fig.update_layout(template="plotly_dark", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a", font=dict(color="#4af626", family="Fira Code, monospace"))
-    fig.update_traces(line_color="#4af626", marker=dict(color="#4af626", size=8))
+    fig.update_layout(template="plotly_dark", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a", font=dict(color="#d3d3d3", family="Fira Code, monospace"))
+    fig.update_traces(line_color="#d3d3d3", marker=dict(color="#d3d3d3", size=8))
     st.plotly_chart(fig, use_container_width=True)
     
     # Expectancy by 15m bucket
@@ -102,8 +102,8 @@ def render_dashboard():
     # convert time_bucket to string for plotting
     expectancy_df['time_bucket_str'] = expectancy_df['time_bucket'].apply(lambda x: x.strftime("%H:%M"))
     fig2 = px.bar(expectancy_df, x='time_bucket_str', y='pnl', title='Average PnL by 15m Entry Window')
-    fig2.update_layout(template="plotly_dark", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a", font=dict(color="#4af626", family="Fira Code, monospace"))
-    fig2.update_traces(marker_color="#4af626")
+    fig2.update_layout(template="plotly_dark", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a", font=dict(color="#d3d3d3", family="Fira Code, monospace"))
+    fig2.update_traces(marker_color="#d3d3d3")
     st.plotly_chart(fig2, use_container_width=True)
     
     # Monte Carlo Sample
@@ -119,8 +119,8 @@ def render_dashboard():
         plot_paths = paths[:, :min(50, num_sims)]
         fig_mc = go.Figure()
         for i in range(plot_paths.shape[1]):
-            fig_mc.add_trace(go.Scatter(y=plot_paths[:, i], mode='lines', line=dict(width=1, color='rgba(74, 246, 38, 0.2)'), showlegend=False))
-        fig_mc.update_layout(title=f"Sample 50 Equity Paths (from {num_sims})", template="plotly_dark", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a", font=dict(color="#4af626", family="Fira Code, monospace"))
+            fig_mc.add_trace(go.Scatter(y=plot_paths[:, i], mode='lines', line=dict(width=1, color='rgba(211, 211, 211, 0.2)'), showlegend=False))
+        fig_mc.update_layout(title=f"Sample 50 Equity Paths (from {num_sims})", template="plotly_dark", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a", font=dict(color="#d3d3d3", family="Fira Code, monospace"))
         st.plotly_chart(fig_mc, use_container_width=True)
 
 def render_new_trade():
@@ -149,7 +149,7 @@ def render_new_trade():
                 st.warning("No complete option trades (BTO + STC pairs) found. Unpaired rows are skipped.")
                 # Fallback: show raw table for reference
                 with st.expander("View raw option rows"):
-                    styled_df = opt_df.style.set_properties(**{'background-color': '#050505', 'color': '#4af626', 'border-color': '#4af626'})
+                    styled_df = opt_df.style.set_properties(**{'background-color': '#050505', 'color': '#d3d3d3', 'border-color': '#555555'})
                     st.dataframe(styled_df, use_container_width=True, hide_index=True)
             else:
                 st.caption("Review each trade and toggle **Include** to approve or deny before importing.")
