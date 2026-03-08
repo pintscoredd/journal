@@ -93,6 +93,8 @@ def render_dashboard():
                   hover_data=['entry_time', 'ticker', 'pnl'])
     fig.update_layout(template="plotly_dark", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a", font=dict(color="#d3d3d3", family="Fira Code, monospace"))
     fig.update_traces(line_color="#d3d3d3", marker=dict(color="#d3d3d3", size=8))
+    fig.update_xaxes(showgrid=False)
+    fig.update_yaxes(showgrid=False)
     st.plotly_chart(fig, use_container_width=True)
     
     # Expectancy by 15m bucket
@@ -104,6 +106,8 @@ def render_dashboard():
     fig2 = px.bar(expectancy_df, x='time_bucket_str', y='pnl', title='Average PnL by 15m Entry Window')
     fig2.update_layout(template="plotly_dark", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a", font=dict(color="#d3d3d3", family="Fira Code, monospace"))
     fig2.update_traces(marker_color="#d3d3d3")
+    fig2.update_xaxes(showgrid=False)
+    fig2.update_yaxes(showgrid=False)
     st.plotly_chart(fig2, use_container_width=True)
     
     # Monte Carlo Sample
@@ -121,6 +125,8 @@ def render_dashboard():
         for i in range(plot_paths.shape[1]):
             fig_mc.add_trace(go.Scatter(y=plot_paths[:, i], mode='lines', line=dict(width=1, color='rgba(211, 211, 211, 0.2)'), showlegend=False))
         fig_mc.update_layout(title=f"Sample 50 Equity Paths (from {num_sims})", template="plotly_dark", paper_bgcolor="#0a0a0a", plot_bgcolor="#0a0a0a", font=dict(color="#d3d3d3", family="Fira Code, monospace"))
+        fig_mc.update_xaxes(showgrid=False)
+        fig_mc.update_yaxes(showgrid=False)
         st.plotly_chart(fig_mc, use_container_width=True)
 
 def render_new_trade():
@@ -331,15 +337,18 @@ def render_trade_viewer():
         
     def format_trade(x):
         row = df[df['id'] == x].iloc[0]
-        ticker = row.get('ticker', '')
-        op_type = str(row.get('option_type', '')).capitalize()
+        ticker = row.get('ticker', '').replace('^', '')
+        op_type = str(row.get('option_type', '')).upper()
         strike = row.get('strike', '')
         try:
-            etime = pd.to_datetime(row['entry_time']).strftime('%b %d, %Y %I:%M %p')
+            db_time = pd.to_datetime(row['entry_time'])
+            if db_time.tzinfo is None:
+                db_time = db_time.tz_localize('UTC')
+            etime = db_time.tz_convert('America/Los_Angeles').strftime('%b %d, %Y %I:%M %p')
         except:
             etime = row['entry_time']
         pnl = row.get('pnl', 0)
-        pnl_str = f"+${pnl:.0f}" if pnl >= 0 else f"-${abs(pnl):.0f}"
+        pnl_str = f"+${pnl:.2f}" if pnl >= 0 else f"-${abs(pnl):.2f}"
         return f"Trade {x} | {ticker} ${strike} {op_type} | {etime} | {pnl_str}"
 
     col1, col2, col3 = st.columns([3, 1, 1])
@@ -378,7 +387,9 @@ def render_trade_viewer():
             st.rerun()
     
     st.write(f"**Score**: {selected.get('trade_quality_score', 'N/A')}/100")
-    st.write(f"PnL: ${selected['pnl']}")
+    pnl_val = selected['pnl']
+    pnl_color = "#4af626" if pnl_val >= 0 else "#ff3333"
+    st.markdown(f"<span style='font-size:1.1rem;'>PnL: <b style='color:{pnl_color}'>${pnl_val:.2f}</b></span>", unsafe_allow_html=True)
     
     if st.session_state.edit_mode:
         st.markdown("### Edit Selected Trade")
@@ -550,8 +561,8 @@ def render_trade_viewer():
                                 textColor: '#d1d4dc',
                             }},
                             grid: {{
-                                vertLines: {{ color: '#2b2b43' }},
-                                horzLines: {{ color: '#2b2b43' }},
+                                vertLines: {{ visible: false }},
+                                horzLines: {{ visible: false }},
                             }},
                             crosshair: {{ mode: LightweightCharts.CrosshairMode.Normal }},
                             timeScale: {{ timeVisible: true, secondsVisible: false }},

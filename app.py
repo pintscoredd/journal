@@ -56,6 +56,12 @@ def apply_terminal_theme():
             color: #ffffff !important;
             border: 1px solid #555555 !important;
             border-radius: 0px !important;
+            font-size: 0.85rem !important;
+        }
+        
+        /* Selectbox dropdown items specifically */
+        ul[role="listbox"] li {
+            font-size: 0.85rem !important;
         }
         
         /* Sidebar styling */
