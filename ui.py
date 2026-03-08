@@ -663,9 +663,25 @@ def render_reports():
             with open("weekly_report.txt", "r") as f:
                 template = f.read()
                 
-            mock_agg_data = {"expectancy": 15.50, "win_rate": 0.65, "total_pnl": 500}
-            with st.spinner("Analyzing weekly data..."):
-                res = adapter.get_critique(template, mock_agg_data)
+            df = get_all_trades_df()
+            if df.empty:
+                st.warning("No trades available to generate a report.")
+                return
+                
+            # Filter to last 7 days of trades if desired, but user asked for "all the data from each trade".
+            # To be safe and comprehensive, let's provide the active entries.
+            # Clean dataframe for JSON serialization
+            df_cleaned = df.copy()
+            for col in df_cleaned.select_dtypes(include=['datetime64', 'datetimetz']).columns:
+                df_cleaned[col] = df_cleaned[col].astype(str)
+            df_cleaned = df_cleaned.replace({pd.NA: None, np.nan: None})
+            
+            # Optionally summarize to prevent token limits if there are thousands of trades,
+            # but for a journal, passing all rows natively.
+            trades_data = {"trades": df_cleaned.to_dict(orient="records")}
+            
+            with st.spinner("Analyzing data..."):
+                res = adapter.get_critique(template, trades_data)
             st.success("Report Generated:")
             st.markdown(res)
         except Exception as e:
