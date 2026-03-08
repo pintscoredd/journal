@@ -10,10 +10,11 @@ st.set_page_config(
 )
 
 # Initialize DB
-@st.cache_resource
 def init_db():
-    create_tables()
-    return True
+    try:
+        create_tables()
+    except Exception as e:
+        print(f"Database init error: {e}")
 
 init_db()
 
