@@ -6,16 +6,14 @@ def block_bootstrap(data_array, block_size, num_samples, seed=None):
         np.random.seed(seed)
         
     n = len(data_array)
+    if n == 0:
+        return np.array([])
+        
+    # Safely limit block_size to data array length
+    block_size = min(block_size, n)
     num_blocks = int(np.ceil(num_samples / block_size))
     
-    # In block bootstrap, we pick random starting indices
-    # up to n - block_size to ensure we have a full block
-    max_start_idx = n - block_size
-    if max_start_idx < 0:
-        # If block_size > data length, just do normal replacement or truncate block
-        max_start_idx = 0
-        block_size = min(block_size, n)
-        
+    max_start_idx = max(0, n - block_size)
     start_indices = np.random.randint(0, max_start_idx + 1, size=num_blocks)
     
     sampled = []
@@ -35,14 +33,23 @@ def simulate_equity_paths(trades_df, num_simulations=10000, initial_capital=200,
     if seed is not None:
         np.random.seed(seed)
         
-    paths = np.zeros((n_trades + 1, num_simulations))
-    paths[0, :] = initial_capital
+    block_size = min(block_size, n_trades)
+    max_start = max(0, n_trades - block_size)
+    num_blocks = int(np.ceil(n_trades / block_size))
     
-    for i in range(num_simulations):
-        sampled_pnls = block_bootstrap(pnls, block_size, n_trades)
-        paths[1:, i] = initial_capital + np.cumsum(sampled_pnls)
-        
-    return paths
+    # Vectorized path generation
+    starts = np.random.randint(0, max_start + 1, size=(num_simulations, num_blocks))
+    
+    sampled = np.zeros((num_simulations, n_trades))
+    for b in range(num_blocks):
+        start = starts[:, b]
+        for j in range(block_size):
+            col = b * block_size + j
+            if col < n_trades:
+                sampled[:, col] = pnls[start + j]
+                
+    paths = np.column_stack([np.full(num_simulations, initial_capital), initial_capital + np.cumsum(sampled, axis=1)])
+    return paths.T
 
 def calculate_risk_metrics(paths_array, ruin_level=0):
     num_sims = paths_array.shape[1]

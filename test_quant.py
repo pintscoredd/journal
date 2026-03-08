@@ -16,6 +16,12 @@ def test_bs_pricing_time_floor():
     assert price >= 50.0  # Should be at least intrinsic value
     assert price < 50.1   # Time premium should be negligible
 
+def test_bs_pricing_zero_sigma():
+    # If sigma is 0, it should not raise division by zero
+    price = bs_price(S=5050, K=5000, T=1/365, r=0.05, sigma=0.0, option_type='call')
+    assert not np.isnan(price)
+    assert price >= 50.0
+
 def test_iv_inversion():
     # Normal case: Brent should work perfectly
     S, K, T, r = 5000, 5050, 7/365, 0.05

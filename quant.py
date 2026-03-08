@@ -6,6 +6,7 @@ MIN_T = 1 / 525600  # 1 minute minimum time floor
 
 def _d1_d2(S, K, T, r, sigma):
     T = max(T, MIN_T)
+    sigma = max(sigma, 1e-8)  # Prevent divide by zero
     d1 = (np.log(S / K) + (r + 0.5 * sigma**2) * T) / (sigma * np.sqrt(T))
     d2 = d1 - sigma * np.sqrt(T)
     return d1, d2

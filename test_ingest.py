@@ -20,3 +20,10 @@ def test_get_market_data_empty_fallback():
     # If network fails or ticker is garbage, should return empty dataframe gracefully
     df = get_market_data("INVALID_TICKER_XXX", interval="1m")
     assert isinstance(df, pd.DataFrame)
+
+def test_import_trades_csv_malformed():
+    # Provide complete garbage (simulating binary or unparseable text)
+    bad_data = "col1\n\x00\x01\x02\n"
+    stream = StringIO(bad_data)
+    with pytest.raises(ValueError, match="Failed to parse CSV"):
+        import_trades_csv(stream)
