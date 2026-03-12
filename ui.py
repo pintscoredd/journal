@@ -58,7 +58,11 @@ def get_all_trades_df():
         if not df.empty:
             try:
                 # Persistent backup to prevent data loss on container/app reboot
-                df.to_csv("trades_backup.csv", index=False)
+                import os
+                backup_dir = os.path.expanduser('~/.spx_0dte_journal')
+                os.makedirs(backup_dir, exist_ok=True)
+                backup_path = os.path.join(backup_dir, "trades_backup.csv")
+                df.to_csv(backup_path, index=False)
             except Exception:
                 pass
         return df

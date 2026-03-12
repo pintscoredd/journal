@@ -99,9 +99,20 @@ def get_engine():
         if not database_url:
             raise ValueError("SUPABASE_URL must be provided when USE_SUPABASE is true")
     else:
-        # Default local SQLite file
-        data_dir = os.path.dirname(__file__)
+        # Use a persistent external path across app updates (User Home Directory)
+        data_dir = os.path.expanduser('~/.spx_0dte_journal')
+        os.makedirs(data_dir, exist_ok=True)
         db_path = os.path.join(data_dir, 'journal.db')
+        
+        # Migrate old local database explicitly to the new location to prevent dropping current data
+        old_local_db = os.path.join(os.path.dirname(__file__), 'journal.db')
+        if not os.path.exists(db_path) and os.path.exists(old_local_db):
+            import shutil
+            try:
+                shutil.copy2(old_local_db, db_path)
+            except Exception:
+                pass
+
         database_url = f"sqlite:///{db_path}"
     
     return create_engine(database_url)
