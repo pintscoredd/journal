@@ -68,6 +68,7 @@ def get_vix_for_day(date_obj: datetime) -> float:
     # 1 day cache effectively
     cache_file = os.path.join(CACHE_DIR, "VIX_daily.parquet")
     df = pd.DataFrame()
+    target_dt = pd.to_datetime(date_obj, utc=True)
     
     if os.path.exists(cache_file):
         mtime = os.path.getmtime(cache_file)
@@ -75,11 +76,16 @@ def get_vix_for_day(date_obj: datetime) -> float:
         if (time.time() - mtime) < CACHE_TTL_SECONDS:
             try:
                 df = pd.read_parquet(cache_file)
+                # Invalidate if the data doesn't reach far back enough
+                if not df.empty:
+                    min_idx = df.index.tz_localize("UTC").min() if df.index.tz is None else df.index.min()
+                    if min_idx > target_dt:
+                        df = pd.DataFrame()
             except (OSError, ValueError):
                 pass
                 
     if df.empty:
-        df = fetch_yfinance_with_retry("^VIX", "1d", "60d")
+        df = fetch_yfinance_with_retry("^VIX", "1d", "max")
         if not df.empty:
             df.to_parquet(cache_file)
             
@@ -87,10 +93,9 @@ def get_vix_for_day(date_obj: datetime) -> float:
         return 0.0
         
     # Find closest previous close
-    target_dt = pd.to_datetime(date_obj, utc=True)
     valid_dates = df[df.index <= target_dt]
     if not valid_dates.empty:
-        return valid_dates.iloc[-1]['Close']
+        return float(valid_dates.iloc[-1]['Close'])
     return 0.0
 
 def _get_annualization_factor(interval: str) -> float:

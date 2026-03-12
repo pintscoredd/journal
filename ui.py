@@ -83,6 +83,7 @@ def render_dashboard():
         return
 
     # High level KPIs
+    df = df.sort_values('entry_time')
     df['cum_pnl'] = df['pnl'].cumsum()
     total_pnl = df['pnl'].sum()
     win_rate = len(df[df['pnl'] > 0]) / len(df) if len(df) > 0 else 0
@@ -476,6 +477,9 @@ def render_trade_viewer():
                     sess.close()
     
     entry_context = {}
+    chart_data = None
+    ema5_data = None
+    img = None
     
     # Replay Chart
     st.subheader("Replay Chart")
@@ -674,7 +678,7 @@ def render_trade_viewer():
             try:
                 from PIL import Image, ImageDraw
                 img = None
-                if entry_context and 'chart_data' in locals() and chart_data:
+                if entry_context and chart_data:
                     width, height = 800, 400
                     # Black background
                     img = Image.new('RGB', (width, height), color=(14, 17, 23))
@@ -750,6 +754,7 @@ def render_reports():
             # Filter to last 7 days of trades if desired, but user asked for "all the data from each trade".
             # To be safe and comprehensive, let's provide the active entries.
             # Clean dataframe for JSON serialization
+            df_cleaned = df.copy()
             # Explicit PST formatting to prevent AI temporal confusion
             time_cols = ['entry_time', 'exit_time', 'expiry', 'created_at']
             for col in time_cols:

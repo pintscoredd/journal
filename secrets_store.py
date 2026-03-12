@@ -111,5 +111,8 @@ def store_api_key(provider: str, plain_key: str):
             record = Secret(provider=provider, encrypted_key=encrypted)
             session.add(record)
         session.commit()
+    except Exception as e:
+        session.rollback()
+        raise e
     finally:
         session.close()
