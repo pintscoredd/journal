@@ -225,6 +225,7 @@ def render_new_trade():
                     import uuid
                     session = get_session()
                     saved = 0
+                    imported_ids = []
                     try:
                         for i, t in enumerate(paired_trades):
                             if not st.session_state.get(f"csv_approve_{i}", True):
@@ -267,8 +268,13 @@ def render_new_trade():
                                 pnl=float(t.get("pnl", 0)),
                             )
                             session.add(new_trade)
+                            session.flush()
+                            imported_ids.append(new_trade.id)
                             saved += 1
                         session.commit()
+                        with st.spinner("Computing quant metrics..."):
+                            for tid in imported_ids:
+                                enrich_trade(tid)
                         st.success(f"Imported **{saved}** trades into your journal.")
                         st.rerun()
                     except Exception as e:
@@ -325,8 +331,15 @@ def render_new_trade():
                     pnl=(exit_price - entry_price) * 100 * contracts
                 )
                 session.add(new_trade)
+                session.flush()
+                tid = new_trade.id
                 session.commit()
-                st.success(f"Trade for {ticker} successfully saved: ${new_trade.pnl:.2f} PnL!")
+                with st.spinner("Computing quant metrics..."):
+                    err = enrich_trade(tid)
+                if err:
+                    st.warning(f"Trade saved but quant computation failed: {err}")
+                else:
+                    st.success(f"Trade for {ticker} successfully saved: ${new_trade.pnl:.2f} PnL and quant metrics computed!")
             except Exception as e:
                 st.error(f"Error saving trade: {e}")
             finally:
@@ -394,6 +407,7 @@ def render_trade_viewer():
             st.rerun()
     
     st.write(f"**Score**: {selected.get('trade_quality_score', 'N/A')}/100")
+    st.caption(f"**Breakdown** — Vol Edge: {selected.get('volatility_edge_score', 'N/A')} | Execution: {selected.get('entry_execution_score', 'N/A')} | Timing: {selected.get('timing_score', 'N/A')} | Risk/Reward: {selected.get('risk_reward_score', 'N/A')}")
     pnl_val = selected['pnl']
     pnl_color = "#4af626" if pnl_val >= 0 else "#ff3333"
     st.markdown(f"<span style='font-size:1.1rem;'>PnL: <b style='color:{pnl_color}'>${pnl_val:.2f}</b></span>", unsafe_allow_html=True)
@@ -653,7 +667,61 @@ def render_trade_viewer():
                 "risk_reward_score": float(selected.get("risk_reward_score") or 70.0),
                 "trade_quality_score": float(selected.get("trade_quality_score") or 90.0),
             }
-            res = adapter.get_critique(template, quant_dict, model="")
+            try:
+                from PIL import Image, ImageDraw
+                img = None
+                if entry_context and 'chart_data' in locals() and chart_data:
+                    width, height = 800, 400
+                    # Black background
+                    img = Image.new('RGB', (width, height), color=(14, 17, 23))
+                    draw = ImageDraw.Draw(img)
+                    
+                    # Normalize scales
+                    x_min = min(c['time'] for c in chart_data)
+                    x_max = max(c['time'] for c in chart_data)
+                    y_min = min(c['low'] for c in chart_data) * 0.999
+                    y_max = max(c['high'] for c in chart_data) * 1.001
+                    
+                    if x_max == x_min:
+                        x_max += 1
+                        x_min -= 1
+                    if y_max == y_min:
+                        y_max += 1
+                        y_min -= 1
+                    
+                    dx = width / (x_max - x_min) if x_max > x_min else 1
+                    dy = height / (y_max - y_min) if y_max > y_min else 1
+                    
+                    # Draw candles
+                    for c in chart_data:
+                        x = (c['time'] - x_min) * dx
+                        o, c_val = (c['open'] - y_min) * dy, (c['close'] - y_min) * dy
+                        h, l = (c['high'] - y_min) * dy, (c['low'] - y_min) * dy
+                        color = '#26a69a' if c_val >= o else '#ef5350'
+                        # wick
+                        draw.line([(x, height - h), (x, height - l)], fill=color, width=1)
+                        # body
+                        draw.rectangle([x - 2, height - max(o, c_val), x + 2, height - min(o, c_val)], fill=color)
+                        
+                    # Draw EMA5
+                    if 'ema5_data' in locals() and ema5_data:
+                        for i in range(1, len(ema5_data)):
+                            x1, y1 = (ema5_data[i-1]['time'] - x_min) * dx, (ema5_data[i-1]['value'] - y_min) * dy
+                            x2, y2 = (ema5_data[i]['time'] - x_min) * dx, (ema5_data[i]['value'] - y_min) * dy
+                            draw.line([(x1, height - y1), (x2, height - y2)], fill='#2962FF', width=2)
+                            
+                    # Draw markers for entry & exit
+                    for ts, col, lbl in [(locals().get('entry_ts'), '#26a69a', 'ENTRY'), (locals().get('exit_ts'), '#ef5350', 'EXIT')]:
+                        if ts:
+                            x = (ts - x_min) * dx
+                            draw.line([(x, 0), (x, height)], fill=col, width=1)
+                            draw.text((x + 5, 20), lbl, fill=col)
+                            
+            except Exception as chart_e:
+                st.warning(f"Could not generate visual chart screenshot: {chart_e}")
+                img = None
+                
+            res = adapter.get_critique(template, quant_dict, model="", image=img)
             st.markdown(res)
         except Exception as e:
             st.error(f"AI Connection Failed: {e}")

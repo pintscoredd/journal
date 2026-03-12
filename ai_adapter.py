@@ -25,7 +25,7 @@ class AIAdapter:
         data = f"{prompt}|{quant_json}|{model}"
         return hashlib.sha256(data.encode('utf-8')).hexdigest()
 
-    def get_critique(self, prompt_template: str, quant_metrics: Dict[str, Any], model: str = "") -> str:
+    def get_critique(self, prompt_template: str, quant_metrics: Dict[str, Any], model: str = "", image=None) -> str:
         # Default models
         if not model:
             if self.provider == "gemini":
@@ -55,9 +55,17 @@ class AIAdapter:
         if self.provider == "noop":
             response_text = '{"summary": "No-op offline test.", "trade_quality_checklist": 100}'
         elif self.provider == "gemini":
+            contents = [final_prompt]
+            if image is not None:
+                try:
+                    # check if the user configured a vision model, otherwise flash is default 
+                    # gemini-2.5-flash supports multimodal natively
+                    contents.append(image)
+                except Exception:
+                    pass
             resp = self.gemini_client.models.generate_content(
                 model=model,
-                contents=final_prompt
+                contents=contents
             )
             response_text = resp.text
         elif self.provider == "groq":

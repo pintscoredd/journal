@@ -133,22 +133,29 @@ def compute_trade_scores(
     timing_score: 25%
     risk_reward_score: 15%
     """
-    # 1. Volatility Edge Score (ideal vol_ratio is 0.9..1.1)
-    if vol_ratio < 0.7 or vol_ratio > 1.3:
-        vol_score = 30.0
-    elif 0.9 <= vol_ratio <= 1.1:
-        vol_score = 100.0
-    else:
-        vol_score = 70.0  # in between
+    def _safe_float(val, default=0.0):
+        if val is None or np.isnan(val):
+            return default
+        return float(val)
+
+    vol_ratio = _safe_float(vol_ratio, 1.0)
+    execution_slippage = _safe_float(execution_slippage, 0.0)
+    entry_time_expectancy = _safe_float(entry_time_expectancy, 0.0)
+    gamma_exposure = _safe_float(gamma_exposure, 0.0)
+
+    # 1. Volatility Edge Score (ideal vol_ratio is 1.0)
+    # The farther from 1.0, the lower the score.
+    # We use a continuous exponential decay function.
+    distance = abs(vol_ratio - 1.0)
+    vol_score = 100 * np.exp(-1.5 * distance)
+    vol_score = min(max(vol_score, 0), 100)
 
     # 2. Execution Score (scale based on relative slippage to theoretical edge)
-    # Penalize negative edge (Slippage relative to 1m best bars)
-    # Simple proxy:
-    exec_score = 100 * np.exp(-50 * abs(execution_slippage))
+    exec_score = 100 * np.exp(-10 * abs(execution_slippage))
     exec_score = min(max(exec_score, 0), 100)
     
-    # 3. Timing Score based on expectancies
-    time_score = min(max(50 + 50 * entry_time_expectancy, 0), 100)
+    # 3. Timing Score based on expectancies (scale 0 to 1 -> 0 to 100)
+    time_score = min(max(100 * entry_time_expectancy, 0), 100)
     
     # 4. Risk / Reward Profile Score (Greeks Profile)
     # E.g. gamma_exposure exploding penalizes the score
@@ -158,10 +165,10 @@ def compute_trade_scores(
     total = (0.35 * vol_score) + (0.25 * exec_score) + (0.25 * time_score) + (0.15 * risk_score)
     
     return {
-        "volatility_edge_score": vol_score,
-        "execution_score": exec_score,
-        "timing_score": time_score,
-        "risk_reward_score": risk_score,
+        "volatility_edge_score": round(vol_score, 1),
+        "execution_score": round(exec_score, 1),
+        "timing_score": round(time_score, 1),
+        "risk_reward_score": round(risk_score, 1),
         "total_score": round(total, 1)
     }
 

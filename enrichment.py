@@ -117,15 +117,27 @@ def enrich_trade(trade_id: int) -> str | None:
         vol_ratio = (iv_entry / ref_vol) if iv_entry and ref_vol else 1.0
         trade.vol_ratio = vol_ratio
 
-        # Scores (execution_slippage and entry_time_expectancy are placeholders without 1m best price)
+        # Scores calculation proxy variables
+        import numpy as np
+        execution_slippage = abs((trade.delta_entry or 0.5) * 0.05)
+        pst_time = entry_dt.tz_convert('America/Los_Angeles')
+        time_val = pst_time.hour + pst_time.minute / 60.0
+        # Better expectancy early in the session
+        if 6.5 <= time_val <= 8.5:
+            entry_time_expectancy = 0.9
+        elif 8.5 < time_val <= 11.5:
+            entry_time_expectancy = 0.6
+        else:
+            entry_time_expectancy = 0.3
+            
         gamma_exposure = abs((trade.gamma_entry or 0) * (trade.contracts or 1) * 100)
         scores = compute_trade_scores(
             theoretical_edge=0.05,
             vol_ratio=vol_ratio,
             delta=trade.delta_entry or 0.5,
             gamma_exposure=gamma_exposure,
-            execution_slippage=0.01,
-            entry_time_expectancy=0.5,
+            execution_slippage=execution_slippage,
+            entry_time_expectancy=entry_time_expectancy,
             hold_time_minutes=hold_minutes,
         )
         trade.entry_execution_score = scores["execution_score"]
